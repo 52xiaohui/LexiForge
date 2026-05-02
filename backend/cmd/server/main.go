@@ -46,9 +46,9 @@ func main() {
 	}
 
 	maimemoClient := maimemo.NewHTTPClient("")
-	_ = ai.NewOpenAIClient(cfg) // wired into article.Service in a follow-up task
+	aiClient := ai.NewOpenAIClient(cfg)
 
-	r := buildRouter(cfg, db, maimemoClient)
+	r := buildRouter(cfg, db, maimemoClient, aiClient)
 
 	slog.Info("starting http server", "addr", cfg.AppPort, "env", cfg.AppEnv)
 	if err := r.Run(cfg.AppPort); err != nil {
@@ -88,7 +88,7 @@ func parseLogLevel(s string) slog.Level {
 // buildRouter wires Gin: middleware, /healthz, and the /api/v1 group.
 //
 // Each domain's NewModule pulls its own repo and service from the shared DB.
-func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client) *gin.Engine {
+func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client, aiClient ai.Client) *gin.Engine {
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -103,7 +103,7 @@ func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client) *gin.E
 	api := r.Group("/api/v1")
 
 	vocabulary.NewModule(db).Register(api)
-	article.NewModule(db).Register(api)
+	article.NewModule(db, aiClient).Register(api)
 	maimemo.NewModule(db, mmClient, cfg.MaimemoToken).Register(api)
 	export.NewModule(db).Register(api)
 

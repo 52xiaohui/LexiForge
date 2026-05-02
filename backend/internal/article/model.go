@@ -5,6 +5,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+
+	"lexiforge/backend/internal/user"
+	"lexiforge/backend/internal/vocabulary"
 )
 
 // Article mirrors the `articles` table from docs/03-database.md.
@@ -26,6 +29,7 @@ type Article struct {
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
 	DeletedAt        *time.Time      `gorm:"index" json:"deleted_at,omitempty"`
+	User             user.User       `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 }
 
 func (Article) TableName() string { return "articles" }
@@ -33,18 +37,20 @@ func (Article) TableName() string { return "articles" }
 // ArticleWord mirrors the `article_words` table from docs/03-database.md.
 // Defensive `unique(article_id, word_id)` — duplicate inserts indicate a bug.
 type ArticleWord struct {
-	ID            uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	ArticleID     uuid.UUID `gorm:"type:uuid;not null;index;uniqueIndex:uq_article_words_article_word" json:"article_id"`
-	WordID        uuid.UUID `gorm:"type:uuid;not null;uniqueIndex:uq_article_words_article_word" json:"word_id"`
-	Spelling      string    `gorm:"type:varchar(255);not null" json:"spelling"`
-	Form          *string   `gorm:"type:varchar(255)" json:"form,omitempty"`
-	Occurrence    *int      `json:"occurrence,omitempty"`
-	ContextBefore *string   `gorm:"type:varchar(64)" json:"context_before,omitempty"`
-	ContextAfter  *string   `gorm:"type:varchar(64)" json:"context_after,omitempty"`
-	CharOffset    *int      `json:"char_offset,omitempty"`
-	CharLength    *int      `json:"char_length,omitempty"`
-	IsCovered     bool      `gorm:"not null;default:false" json:"is_covered"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            uuid.UUID            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ArticleID     uuid.UUID            `gorm:"type:uuid;not null;index;uniqueIndex:uq_article_words_article_word" json:"article_id"`
+	WordID        uuid.UUID            `gorm:"type:uuid;not null;uniqueIndex:uq_article_words_article_word" json:"word_id"`
+	Spelling      string               `gorm:"type:varchar(255);not null" json:"spelling"`
+	Form          *string              `gorm:"type:varchar(255)" json:"form,omitempty"`
+	Occurrence    *int                 `json:"occurrence,omitempty"`
+	ContextBefore *string              `gorm:"type:varchar(64)" json:"context_before,omitempty"`
+	ContextAfter  *string              `gorm:"type:varchar(64)" json:"context_after,omitempty"`
+	CharOffset    *int                 `json:"char_offset,omitempty"`
+	CharLength    *int                 `json:"char_length,omitempty"`
+	IsCovered     bool                 `gorm:"not null;default:false" json:"is_covered"`
+	CreatedAt     time.Time            `json:"created_at"`
+	Article       Article              `gorm:"foreignKey:ArticleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Word          vocabulary.VocabWord `gorm:"foreignKey:WordID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 }
 
 func (ArticleWord) TableName() string { return "article_words" }
