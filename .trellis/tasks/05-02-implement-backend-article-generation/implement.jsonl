@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend spec index and implementation checklist for article generation MVP."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Backend module organization guidance for article handler/service/repository changes."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Database conventions and cross-layer contracts for vocab/article persistence."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Shared API error envelope conventions for generation and article endpoints."}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Secret-redaction expectations for OpenAI-compatible API calls."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend quality and test expectations."}

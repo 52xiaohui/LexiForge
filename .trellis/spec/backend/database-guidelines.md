@@ -122,3 +122,87 @@ Use map updates when nullable columns must be overwritten by null values.
 
 - Do not silently skip malformed upstream records during sync. Failing the sync is easier to debug than hiding partial data loss.
 - Do not log `MAIMEMO_TOKEN` or Authorization values when investigating sync failures.
+
+---
+
+## Scenario: MVP Article Generation
+
+### 1. Scope / Trigger
+
+- Trigger: implementing `POST /api/v1/articles/generate` and article read/manage/export APIs.
+- This is a cross-layer contract: REST request -> vocabulary selection -> OpenAI-compatible JSON output -> coverage validation -> `articles` + `article_words` transaction.
+
+### 2. Signatures
+
+- API:
+  - `POST /api/v1/articles/generate`
+  - `GET /api/v1/articles`
+  - `GET /api/v1/articles/:id`
+  - `DELETE /api/v1/articles/:id`
+  - `GET /api/v1/articles/:id/export.md`
+- DB:
+  - `articles.user_id -> users.id`
+  - `article_words.article_id -> articles.id`
+  - `article_words.word_id -> vocab_words.id`
+  - `article_words.unique(article_id, word_id)`
+
+### 3. Contracts
+
+- `target_word_ids` are local-user `study_records.id` values from vocabulary endpoints.
+- Every generation request creates a new `articles` row; do not update or regenerate in place.
+- Every target word creates exactly one `article_words` row.
+- Covered rows set `is_covered=true` and populate `form`, `occurrence`, `context_before`, `context_after`, `char_offset`, and `char_length`.
+- Missing rows set `is_covered=false` and leave offset/length fields null.
+- `char_offset` and `char_length` are Unicode code point counts, not bytes and not UTF-16 code units.
+- The AI client calls `/chat/completions` with `response_format.type=json_schema`; if a provider does not support this, handle that as an AI generation failure rather than parsing free text.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| Invalid JSON | `400 INVALID_JSON` |
+| Missing topic | `422 TOPIC_REQUIRED` |
+| Missing difficulty | `422 DIFFICULTY_REQUIRED` |
+| `target_word_count < 15` | `422 TARGET_WORD_COUNT_TOO_SMALL` |
+| `target_word_count > 80` or selected count > 80 | `422 TARGET_WORDS_TOO_MANY` |
+| selected count > `target_word_count` | `422 TARGET_WORDS_EXCEED_COUNT` |
+| selected id is not UUID | `422 TARGET_WORD_ID_INVALID` |
+| selected id not owned by local user | `422 TARGET_WORDS_INVALID` |
+| not enough vocab records | `422 TARGET_WORDS_NOT_ENOUGH` |
+| `OPENAI_API_KEY` missing | `503 AI_GENERATION_UNAVAILABLE` |
+| AI non-2xx or invalid structured JSON | `502 AI_GENERATION_FAILED` |
+| article not found | `404 ARTICLE_NOT_FOUND` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: request 30 words with no selected ids; backend fills from weak/mid/recent pools, persists article and 30 article word rows.
+- Base: selected ids fewer than `target_word_count`; backend preserves selected words first, then fills remaining slots.
+- Bad: AI claims a covered word but verbatim context is not found; treat it as missing and retry if coverage is below 90%.
+
+### 6. Tests Required
+
+- Coverage tests assert Unicode code point offset/length behavior.
+- Service tests assert low coverage retries and passes missing words into the next AI call.
+- Service tests assert all target words are saved, including missing words.
+- Client tests assert OpenAI-compatible request path, Authorization header, and `json_schema` response format.
+- Handler tests assert shared error envelopes for invalid JSON and validation failures.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+// Do not trust AI-provided positions or plain spelling search.
+offset := strings.Index(content, spelling)
+```
+
+#### Correct
+
+```go
+needle := contextBefore + form + contextAfter
+byteStart := strings.Index(content, needle)
+charOffset := len([]rune(content[:byteStart+len(contextBefore)]))
+charLength := len([]rune(form))
+```
+
+Use verbatim context to verify the AI's claim and convert offsets to code point units.
