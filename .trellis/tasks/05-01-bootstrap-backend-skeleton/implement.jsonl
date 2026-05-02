@@ -1,0 +1,6 @@
+{"file": "docs/02-architecture.md", "reason": "技术栈、后端分层、目录结构 — 骨架的源参考"}
+{"file": "docs/03-database.md", "reason": "MVP 5 张表的 schema、字段、唯一键、seed local-user 的固定 UUID"}
+{"file": "docs/04-api.md", "reason": "REST 端点速查表 (MVP 阶段)、错误响应格式、MaiMemo Client 接口签名"}
+{"file": "docs/07-security.md", "reason": "MVP Token 来自 MAIMEMO_TOKEN 环境变量、日志脱敏字段清单、错误响应 code 命名"}
+{"file": "docs/08-deployment.md", "reason": "docker-compose / Dockerfile / 环境变量约定参考"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端 spec 入口 (本仓为模板,但仍需读取确认是否已有项目特定约定)"}
