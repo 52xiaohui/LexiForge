@@ -75,6 +75,9 @@ func (s *Service) Sync(ctx context.Context) (SyncResult, error) {
 	if resp.TotalCount > total {
 		total = resp.TotalCount
 	}
+	if resp.Count > total {
+		total = resp.Count
+	}
 	result := SyncResult{
 		Status:          "succeeded",
 		RecordsTotal:    total,

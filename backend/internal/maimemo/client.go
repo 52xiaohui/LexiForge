@@ -105,10 +105,32 @@ func (c *HTTPClient) postJSON(ctx context.Context, token, path string, in, out a
 		return fmt.Errorf("%w: status %d", ErrUnavailable, resp.StatusCode)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	if err := decodeResponse(resp.Body, out); err != nil {
 		return fmt.Errorf("decode maimemo response: %w", err)
 	}
 	return nil
+}
+
+type apiEnvelope struct {
+	Success bool            `json:"success"`
+	Errors  []string        `json:"errors"`
+	Data    json.RawMessage `json:"data"`
+}
+
+func decodeResponse(body io.Reader, out any) error {
+	var raw json.RawMessage
+	if err := json.NewDecoder(body).Decode(&raw); err != nil {
+		return err
+	}
+
+	var envelope apiEnvelope
+	if err := json.Unmarshal(raw, &envelope); err == nil && len(envelope.Data) > 0 {
+		if !envelope.Success && len(envelope.Errors) > 0 {
+			return fmt.Errorf("maimemo returned errors")
+		}
+		return json.Unmarshal(envelope.Data, out)
+	}
+	return json.Unmarshal(raw, out)
 }
 
 func joinURL(baseURL, path string) string {

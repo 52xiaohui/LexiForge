@@ -4,6 +4,7 @@ package maimemo
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -67,6 +68,7 @@ func respondSyncError(c *gin.Context, err error) {
 	case errors.Is(err, ErrUnavailable):
 		httpx.Respond(c, http.StatusBadGateway, "MAIMEMO_API_UNAVAILABLE", "暂时无法连接墨墨开放 API，请稍后重试。", nil)
 	default:
+		slog.Error("maimemo sync failed", "error", err)
 		httpx.Respond(c, http.StatusInternalServerError, "MAIMEMO_SYNC_FAILED", "failed to sync MaiMemo records", nil)
 	}
 }

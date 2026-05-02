@@ -41,6 +41,7 @@ seeds the fixed `user.LocalUserID` row.
 - Stored record contract:
   - provider is `maimemo`.
   - `provider_voc_id` is upstream `voc_id`.
+  - `provider_voc_id` must allow long upstream ids; use `varchar(255)`, not `varchar(64)`.
   - empty or unknown `last_response` is normalized to `UNKNOWN`.
   - `score_version` is `v1`.
   - `score_reasons` is JSONB with integer reason contributions.
@@ -122,6 +123,7 @@ Use map updates when nullable columns must be overwritten by null values.
 
 - Do not silently skip malformed upstream records during sync. Failing the sync is easier to debug than hiding partial data loss.
 - Do not log `MAIMEMO_TOKEN` or Authorization values when investigating sync failures.
+- Do not assume MaiMemo `voc_id` fits in 64 characters. Real `voc-*` ids can exceed that length.
 
 ---
 

@@ -29,7 +29,7 @@ func TestHTTPClientQueryStudyRecords(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"records":[{"voc_id":"1","voc_spelling":"competent","last_response":"FORGET","study_count":14,"tags":["STICKING"]}],"total_count":1}`))
+		_, _ = w.Write([]byte(`{"success":true,"errors":[],"data":{"records":[{"voc_id":"1","voc_spelling":"competent","last_response":"FORGET","study_count":14,"tags":["STICKING"]}],"count":1}}`))
 	}))
 	defer server.Close()
 
@@ -38,7 +38,7 @@ func TestHTTPClientQueryStudyRecords(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryStudyRecords returned error: %v", err)
 	}
-	if got.TotalCount != 1 || len(got.Records) != 1 {
+	if got.Count != 1 || len(got.Records) != 1 {
 		t.Fatalf("response = %#v, want one record", got)
 	}
 	if got.Records[0].VocSpelling != "competent" {

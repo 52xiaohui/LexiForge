@@ -29,6 +29,7 @@ type QueryStudyRecordsResponse struct {
 	Records    []StudyRecord `json:"records"`
 	TotalCount int           `json:"total_count"`
 	Cursor     string        `json:"cursor,omitempty"`
+	Count      int           `json:"count,omitempty"`
 }
 
 // StudyProgress is the upstream summary endpoint response.

@@ -14,7 +14,7 @@ import (
 type VocabWord struct {
 	ID            uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Provider      string    `gorm:"type:varchar(32);not null;uniqueIndex:uq_vocab_words_provider_voc" json:"provider"`
-	ProviderVocID string    `gorm:"type:varchar(64);not null;uniqueIndex:uq_vocab_words_provider_voc" json:"provider_voc_id"`
+	ProviderVocID string    `gorm:"type:varchar(255);not null;uniqueIndex:uq_vocab_words_provider_voc" json:"provider_voc_id"`
 	Spelling      string    `gorm:"type:varchar(255);not null;index" json:"spelling"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -29,7 +29,7 @@ type StudyRecord struct {
 	UserID         uuid.UUID      `gorm:"type:uuid;not null;index;uniqueIndex:uq_study_records_user_provider_voc" json:"user_id"`
 	WordID         uuid.UUID      `gorm:"type:uuid;not null;index" json:"word_id"`
 	Provider       string         `gorm:"type:varchar(32);not null;uniqueIndex:uq_study_records_user_provider_voc" json:"provider"`
-	ProviderVocID  string         `gorm:"type:varchar(64);not null;uniqueIndex:uq_study_records_user_provider_voc" json:"provider_voc_id"`
+	ProviderVocID  string         `gorm:"type:varchar(255);not null;uniqueIndex:uq_study_records_user_provider_voc" json:"provider_voc_id"`
 	LastResponse   string         `gorm:"type:varchar(32)" json:"last_response"`
 	StudyCount     int            `gorm:"not null;default:0" json:"study_count"`
 	Tags           datatypes.JSON `gorm:"type:jsonb" json:"tags"`

@@ -192,7 +192,7 @@ status: active / invalid / revoked
 ```text
 id                uuid primary key
 provider          varchar
-provider_voc_id   varchar
+provider_voc_id   varchar(255)
 spelling          varchar
 created_at        timestamp
 updated_at        timestamp
@@ -247,7 +247,7 @@ id                 uuid primary key
 user_id            uuid references users(id)
 word_id            uuid references vocab_words(id)
 provider           varchar
-provider_voc_id    varchar
+provider_voc_id    varchar(255)
 last_response      varchar
 study_count        int
 tags               jsonb
