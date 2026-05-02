@@ -1,0 +1,49 @@
+# OS / editor noise ------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Per-developer AI / workflow runtime state (never commit) --------------------
+.claude/settings.local.json
+.trellis/workspace/
+
+# Local skill/reference folder -------------------------------------------------
+memo-api/
+
+# Backend (Go) -----------------------------------------------------------------
+backend/tmp/
+backend/bin/
+backend/server
+backend/server.exe
+*.test
+coverage.out
+*.coverprofile
+
+# Env files (.env is local; only .env.example is tracked) ----------------------
+*.env
+.env.*
+!*.env.example
+!.env.example
+
+# Logs / local runtime ---------------------------------------------------------
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Frontend dependencies / caches / builds -------------------------------------
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+.turbo/
+.parcel-cache/
