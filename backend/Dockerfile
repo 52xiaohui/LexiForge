@@ -4,7 +4,7 @@
 # Stage 1 compiles a fully static binary (CGO disabled) so the runner image
 # can be a tiny alpine without libc surprises.
 
-FROM golang:1.22-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /src
 
 # Cache module downloads — go.mod / go.sum invalidate this layer only when

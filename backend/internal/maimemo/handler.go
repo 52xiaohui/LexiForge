@@ -3,6 +3,9 @@
 package maimemo
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -30,17 +33,40 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 // MVP semantics from docs/04-api.md: synchronous full-pull, returns counts.
 // This stub will be replaced once the maimemo client lands.
 func (h *Handler) SyncMaimemo(c *gin.Context) {
-	httpx.NotImplemented(c, "POST /sync/maimemo")
+	result, err := h.svc.Sync(c.Request.Context())
+	if err != nil {
+		respondSyncError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 // LatestSync stubs `GET /api/v1/sync/latest`.
 func (h *Handler) LatestSync(c *gin.Context) {
-	httpx.NotImplemented(c, "GET /sync/latest")
+	latest, err := h.svc.LatestSync()
+	if err != nil {
+		httpx.Respond(c, http.StatusInternalServerError, "SYNC_LATEST_FAILED", "failed to read latest sync state", nil)
+		return
+	}
+	c.JSON(http.StatusOK, latest)
 }
 
 // NewModule wires the maimemo Client + repo + service + handler.
-func NewModule(db *gorm.DB, client Client) *Handler {
+func NewModule(db *gorm.DB, client Client, token string) *Handler {
 	repo := NewRepository(db)
-	svc := NewService(repo, client)
+	svc := NewService(repo, client, token)
 	return NewHandler(svc)
+}
+
+func respondSyncError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrTokenMissing):
+		httpx.Respond(c, http.StatusBadRequest, "MAIMEMO_TOKEN_MISSING", "MAIMEMO_TOKEN is not configured.", nil)
+	case errors.Is(err, ErrInvalidToken):
+		httpx.Respond(c, http.StatusUnauthorized, "MAIMEMO_TOKEN_INVALID", "墨墨 Token 无效或已过期，请重新配置。", nil)
+	case errors.Is(err, ErrUnavailable):
+		httpx.Respond(c, http.StatusBadGateway, "MAIMEMO_API_UNAVAILABLE", "暂时无法连接墨墨开放 API，请稍后重试。", nil)
+	default:
+		httpx.Respond(c, http.StatusInternalServerError, "MAIMEMO_SYNC_FAILED", "failed to sync MaiMemo records", nil)
+	}
 }

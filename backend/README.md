@@ -5,10 +5,10 @@ per `docs/02-architecture.md`. MVP scope: single-user, MaiMemo sync, AI
 article generation, coverage tracking. v0.5+ topics (auth, encryption,
 limits, async jobs, imports) are intentionally absent.
 
-This repo is currently a **skeleton** — every MVP REST endpoint is registered
-but returns `501 NOT_IMPLEMENTED`. The directory layout, DB schema, middleware
-and external clients are in place so business logic can drop in package by
-package.
+The vocabulary core is implemented: MaiMemo sync pulls single-user records,
+scores them, upserts `vocab_words` / `study_records`, and exposes the vocab
+query endpoints. Article generation and article export are still explicit
+`501 NOT_IMPLEMENTED` follow-up work.
 
 ## Quick start (local Go)
 
@@ -35,7 +35,10 @@ curl http://localhost:8080/healthz
 # {"status":"ok"}
 
 curl -X POST http://localhost:8080/api/v1/sync/maimemo
-# {"code":"NOT_IMPLEMENTED","message":"POST /sync/maimemo pending"}
+# {"status":"succeeded","records_total":992,"records_inserted":992,"records_updated":0,"duration_ms":1840}
+
+curl http://localhost:8080/api/v1/vocab/weak?min_weak_score=80
+# {"items":[...],"total":233,"page":1,"page_size":50}
 ```
 
 ## Environment
@@ -64,7 +67,7 @@ backend/
     user/                        User model + LocalUserID constant
     vocabulary/                  VocabWord, StudyRecord + handler/service/repo
     article/                     Article, ArticleWord + handler/service/repo
-    maimemo/                     Client interface + types + sync handler stub
+    maimemo/                     MaiMemo client + sync handler/service/repo
     ai/                          OpenAI-compatible client stub
     export/                      v0.5+ export skeleton (empty in MVP)
   Dockerfile                     multi-stage static build
@@ -90,11 +93,10 @@ local-user row (`00000000-0000-0000-0000-000000000001`) on every boot.
 ## What's not here yet
 
 Roughly in priority order:
-- Real `MaiMemo` HTTP client (replace `ErrNotImplemented`)
-- Sync service: pull → score (`mastery_score`, `weak_score`) → upsert
 - AI article generation + coverage location (see `docs/05-ai-workflow.md`)
+- Article list/detail/delete
 - Markdown export
-- Tests
+- Broader integration tests against Postgres
 
 v0.5 picks up auth, AES-GCM token storage, Redis-backed limits, async sync
 jobs, and CSV/Anki imports.

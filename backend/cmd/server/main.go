@@ -104,7 +104,7 @@ func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client) *gin.E
 
 	vocabulary.NewModule(db).Register(api)
 	article.NewModule(db).Register(api)
-	maimemo.NewModule(db, mmClient).Register(api)
+	maimemo.NewModule(db, mmClient, cfg.MaimemoToken).Register(api)
 	export.NewModule(db).Register(api)
 
 	return r

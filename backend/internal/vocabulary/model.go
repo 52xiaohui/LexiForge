@@ -5,6 +5,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
+
+	"lexiforge/backend/internal/user"
 )
 
 // VocabWord mirrors the `vocab_words` table from docs/03-database.md.
@@ -44,6 +46,8 @@ type StudyRecord struct {
 	SyncedAt       *time.Time     `json:"synced_at,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 	UpdatedAt      time.Time      `json:"updated_at"`
+	User           user.User      `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Word           VocabWord      `gorm:"foreignKey:WordID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 }
 
 func (StudyRecord) TableName() string { return "study_records" }
