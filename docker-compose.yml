@@ -1,0 +1,42 @@
+# docker-compose.yml — LexiForge MVP stack.
+#
+# `docker compose up -d` brings up Postgres + the Go backend with a shared
+# .env file at the repo root. The backend waits for Postgres to pass its
+# healthcheck before booting; on first boot it auto-migrates and seeds the
+# local-user row.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lexiforge
+      POSTGRES_PASSWORD: lexiforge
+      POSTGRES_DB: lexiforge
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexiforge -d lexiforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://lexiforge:lexiforge@postgres:5432/lexiforge?sslmode=disable
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
