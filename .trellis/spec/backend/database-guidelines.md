@@ -111,6 +111,78 @@ Use map updates when nullable columns must be overwritten by null values.
 
 ---
 
+## Scenario: Backend Postgres Integration Tests
+
+### 1. Scope / Trigger
+
+- Trigger: adding tests that exercise real GORM/PostgreSQL behavior instead of package-local fakes.
+- Use these tests for repository transactions, `RunMigrations`, seed data, JSONB, soft delete, unique indexes, and cross-table reads.
+
+### 2. Signatures
+
+- Environment:
+  - `LEXIFORGE_TEST_DATABASE_URL`: optional Postgres DSN that enables integration tests.
+- Command:
+  - `go test ./...` must pass without a running database.
+  - `LEXIFORGE_TEST_DATABASE_URL="postgres://..." go test ./internal/database` runs the opt-in integration suite.
+- DB:
+  - Each test creates a random schema named `lexiforge_test_<uuid-without-dashes>`.
+  - Each test drops its random schema with `CASCADE` during cleanup.
+
+### 3. Contracts
+
+- Integration tests must never call real MaiMemo or real AI providers; inject fakes at the client boundary.
+- Integration tests must run `database.RunMigrations` inside the random schema before creating rows.
+- The test connection should use a single open connection while `search_path` is schema-scoped.
+- If `LEXIFORGE_TEST_DATABASE_URL` is unset, tests skip with a clear message.
+- Random schemas are the isolation boundary; do not truncate or drop shared/public tables.
+
+### 4. Validation & Error Matrix
+
+| Condition | Behavior |
+|---|---|
+| `LEXIFORGE_TEST_DATABASE_URL` missing | `t.Skip` with setup instructions |
+| Postgres unavailable | `t.Skipf` with the connection error |
+| Schema creation fails | `t.Fatalf`; the database is reachable but not usable |
+| Migration fails | `t.Fatalf`; schema contract drift must be fixed |
+| External service needed | Use a fake; tests must not require real credentials |
+
+### 5. Good/Base/Bad Cases
+
+- Good: test creates a random schema, runs migrations, seeds fixtures, validates persisted rows, then drops only that schema.
+- Base: no env var set; default unit test suite still passes quickly.
+- Bad: test points at public schema and truncates shared tables, making local dev data unsafe.
+
+### 6. Tests Required
+
+- Migration/seed tests assert the fixed `user.LocalUserID` row exists.
+- Repository-backed article tests assert article + article_words transaction behavior, coverage offsets, list/read/export, and soft delete.
+- Future sync integration tests should assert idempotent upsert counts and JSONB tags/reasons round-trip through PostgreSQL.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+db.Exec("TRUNCATE users, vocab_words, study_records CASCADE")
+```
+
+#### Correct
+
+```go
+schema := "lexiforge_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+db.Exec("CREATE SCHEMA " + schema)
+db.Exec("SET search_path TO " + schema)
+t.Cleanup(func() {
+    db.Exec("SET search_path TO public")
+    db.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE")
+})
+```
+
+Use a throwaway schema so integration tests can run against a developer's local database without deleting unrelated data.
+
+---
+
 ## Naming Conventions
 
 - Table names are pinned with `TableName()` when drift would be costly.

@@ -46,6 +46,22 @@ curl -X POST http://localhost:8080/api/v1/articles/generate \
 # {"article_id":"...","status":"succeeded","covered_word_count":29,"target_word_count":30,"coverage_rate":0.9667}
 ```
 
+## Tests
+
+```bash
+go test ./...
+```
+
+Postgres integration tests are opt-in so the default test suite does not
+require Docker or a local database. To run them, provide an isolated test
+database URL:
+
+```bash
+LEXIFORGE_TEST_DATABASE_URL="postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable" go test ./internal/database
+```
+
+The integration tests create and drop a random schema inside that database.
+
 ## Environment
 
 | Variable | Required | Default | Notes |
@@ -98,7 +114,7 @@ local-user row (`00000000-0000-0000-0000-000000000001`) on every boot.
 ## What's not here yet
 
 Roughly in priority order:
-- Broader integration tests against Postgres
+- Broader integration tests for sync and API handler flows
 - Frontend MVP screens for sync, vocabulary, and article generation
 
 v0.5 picks up auth, AES-GCM token storage, Redis-backed limits, async sync
