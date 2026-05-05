@@ -29,9 +29,9 @@ graph LR
 |---|---|---|---|
 | `DATABASE_URL` | PostgreSQL 连接串 | MVP | `postgres://app:pass@db:5432/lexiforge` |
 | `MAIMEMO_TOKEN` | 单用户 Token（MVP） | MVP | `mm_xxxxx` |
-| `AI_API_KEY` | AI 服务 Key | MVP | `sk-...` |
-| `AI_BASE_URL` | AI API 基础地址 | MVP | `https://api.openai.com/v1` |
-| `AI_MODEL` | 模型名称 | MVP | `gpt-4o-mini` |
+| `OPENAI_API_KEY` | AI 服务 Key | MVP | `sk-...` |
+| `OPENAI_BASE_URL` | AI API 基础地址 | MVP | `https://api.openai.com/v1` |
+| `OPENAI_MODEL` | 模型名称 | MVP | `gpt-4o-mini` |
 | `APP_PORT` | 后端监听端口 | MVP | `8080` |
 | `APP_ENCRYPTION_KEY` | AES-GCM 主密钥（32 字节 base64） | v0.5 | `base64:...` |
 | `JWT_SECRET` | JWT 签名密钥 | v0.5 | 随机 64 字节 |
@@ -39,7 +39,7 @@ graph LR
 | `RATE_LIMIT_RPS` | 全局限流（次/秒） | v0.5 | `5` |
 | `LOG_LEVEL` | 日志等级 | MVP | `info` |
 
-注意：`APP_ENCRYPTION_KEY` 和 `AI_API_KEY` 必须在生产环境通过 secret manager 注入，**绝不进入 Git**。
+注意：`APP_ENCRYPTION_KEY` 和 `OPENAI_API_KEY` 必须在生产环境通过 secret manager 注入，**绝不进入 Git**。
 
 ### 生产部署
 

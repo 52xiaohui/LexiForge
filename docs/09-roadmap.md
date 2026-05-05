@@ -48,7 +48,7 @@ gantt
 - 初始化 Go 项目（cmd/server + internal 分层）
 - 接入 PostgreSQL + GORM
 - 设计 schema（users with seed local-user / vocab_words / study_records / articles / article_words）
-- 实现配置管理（env 读取 `MAIMEMO_TOKEN`、`AI_API_KEY`）
+- 实现配置管理（env 读取 `MAIMEMO_TOKEN`、`OPENAI_API_KEY`）
 - 实现 MaiMemo Client（context 超时 + 失败分类 + Authorization 脱敏）
 - 实现手动全量同步（MVP 同步执行，直接返回 `records_total`）
 - 实现 mastery_score / weak_score 计算，写 `score_version` / `score_reasons`

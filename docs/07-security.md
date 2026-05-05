@@ -143,7 +143,7 @@ sequenceDiagram
 - **CORS allowlist**：生产环境 `Access-Control-Allow-Origin` 严格白名单（不允许 `*`），凭据请求显式 `Allow-Credentials: true`
 - **账号删除保留期**：`deleted_at` 软删除 30 天，期满后批处理硬删（含 study_records / articles / user_tokens 全部级联）
 - **AI Provider 数据披露**：首次调用 AI 前弹窗确认"将向第三方 AI 服务发送薄弱词、主题与难度（不含 Token 与个人身份信息）"，记录用户同意时间到 `users.ai_consent_at`
-- **密钥与凭证管理**：`APP_ENCRYPTION_KEY` / `JWT_SECRET` / `AI_API_KEY` 通过 secret manager（Railway/Render/云服务）注入，绝不进 Git；本地开发用 `.env.local`（已在 `.gitignore`）
+- **密钥与凭证管理**：`APP_ENCRYPTION_KEY` / `JWT_SECRET` / `OPENAI_API_KEY` 通过 secret manager（Railway/Render/云服务）注入，绝不进 Git；本地开发用 `.env.local`（已在 `.gitignore`）
 - **审计日志**：Token 配置/使用/删除、AI 调用、账号删除等事件单独写 audit 表，保留 90 天
 
 ## 错误处理
