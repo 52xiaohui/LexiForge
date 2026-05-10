@@ -241,8 +241,8 @@ AI Personalized Vocabulary Reading Platform
 简历描述：
 
 ```text
-- 使用 Go/Gin 构建后端 API 服务，封装墨墨 Open API Client，同步 992 条真实学习记录并持久化到 PostgreSQL。
-- 设计基于 last_response、study_count、tags、next_study_date 的薄弱词评分模型（带 score_version / score_reasons 版本化字段，支持解释和重算），从 992 条记录中自动识别 233 个高优先级复习词（识别率 23%）。
+- 使用 Go/Gin 构建后端 API 服务，封装墨墨 Open API Client，通过 count-based date range pagination 同步 1000+ 条真实学习记录并持久化到 PostgreSQL。
+- 设计基于 last_response、study_count、tags、next_study_date 的薄弱词评分模型（带 score_version / score_reasons 版本化字段，支持解释和重算），自动识别高优先级复习词。
 - 构建 AI 内容生成工作流，根据薄弱词、文章主题和 CEFR 难度生成个性化英文阅读材料；让模型返回 form + occurrence + 上下文片段，后端用 IndexOf 锚定 Unicode code point 偏移，避开词形还原与字节/UTF-16 编码踩坑，目标词覆盖率 ≥ 90%，自动二次修正最多 2 次。
 - 后端代理所有第三方调用（Token / AI API Key 不出后端、日志自动脱敏），从设计阶段满足第三方授权数据最小化原则；预留 AES-GCM 加密、key 轮换、CSRF/CORS、数据披露等生产硬化方案。
 - 使用 Vite + React + TypeScript 构建前端 SPA，所有数据接口由 Go 后端提供；Docker Compose 管理后端、数据库和缓存服务，支持本地一键启动与云端 Demo 部署。
@@ -254,7 +254,7 @@ MVP 完成时，应满足：
 
 - 可以通过环境变量 `MAIMEMO_TOKEN` 配置墨墨 Token（前端 Token 配置页放到 v0.5）
 - Token 不会出现在前端响应或日志里
-- 可以通过 `POST /sync/maimemo` 同步学习记录，响应直接返回 `records_total / inserted / updated`
+- 可以通过 `POST /sync/maimemo` 同步学习记录，响应直接返回 `records_total / records_fetched / inserted / updated`
 - Dashboard 能看到总单词数和最近同步时间
 - 薄弱词列表能按 weak_score 排序、按 last_response 筛选
 - 薄弱词页可以勾选目标词跳转到生成页（`?target_word_ids=...`）

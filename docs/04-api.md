@@ -96,10 +96,20 @@ GET  /api/v1/sync/latest
 ```json
 {
   "status": "succeeded",
-  "records_total": 992,
+  "records_total": 1079,
+  "records_fetched": 1079,
   "records_inserted": 12,
-  "records_updated": 980,
+  "records_updated": 1067,
   "duration_ms": 1840
+}
+```
+
+当上游报告的总量大于后端可通过 `next_study_date` 分页取回的记录数时，响应会额外返回：
+
+```json
+{
+  "records_unavailable": 3,
+  "warning": "MaiMemo reports more records than can be paginated by next_study_date; records without next_study_date may be unavailable through the documented sync filters."
 }
 ```
 
@@ -370,10 +380,27 @@ type Client interface {
 
 ```text
 POST /study/query_study_records
-body: {"limit": 1000}
+body: {"as_count": true}
+
+POST /study/query_study_records
+body: {
+  "next_study_date": {
+    "start": "1900-01-01T00:00:00+08:00",
+    "end": "9999-12-31T23:59:59+08:00"
+  },
+  "as_count": true
+}
 ```
 
-当前实际数据 992 条，一次能拉完。MVP 阶段每次同步覆盖式更新所有记录，简单可靠，避免引入增量与调度的复杂度。
+MVP 阶段每次同步仍是手动全量同步，但不能假设一次 `limit: 1000` 能拉完，也不能把上游返回的最后一条记录当分页游标。真实 MaiMemo API 行为要求：
+
+- `query_study_records` 的 `limit` 最大为 1000。
+- `next_study_date.start` 与 `next_study_date.end` 都是包含边界。
+- 返回列表不能可靠视为按 `next_study_date` 升序，即使传了日期过滤。
+- 全量同步先获取总数，再对 `next_study_date` 范围做 count-based partition：某个范围 `count <= 1000` 时拉取该范围；超过 1000 时二分范围继续递归。
+- 由于日期边界包含，后端按上游 `voc_id` 去重后再 upsert。
+
+后端写库使用 GORM 批量 upsert：先批量写 `vocab_words`，再按 `(provider, provider_voc_id)` 取回 word id，最后批量 upsert `study_records`。这样重复全量同步不会插入重复行，也能把 nullable 日期字段更新为 null。
 
 **MVP 防误触保护**（不是真正的限流）：
 
@@ -390,7 +417,6 @@ body: {"limit": 1000}
 
 **v1：定时调度**
 
-- 用户记录超过 1000 时，基于 `next_study_date` 滑动窗口分页
 - 后台定时同步（默认每天 1 次，用户可关闭）
 - 同步失败邮件提醒
 
@@ -417,13 +443,17 @@ sequenceDiagram
     Q->>DB: UPDATE sync_jobs → running
     Q->>DB: SELECT encrypted_token
     Q->>Q: AES-GCM 解密 (内存)
-    Q->>MAI: POST /study/query_study_records
-    MAI-->>Q: 992 条记录
+    Q->>MAI: POST /study/query_study_records (as_count)
+    MAI-->>Q: records_total
+    loop count-based date range partition
+        Q->>MAI: POST /study/query_study_records (next_study_date start/end)
+        MAI-->>Q: <= 1000 条记录
+    end
     loop 每条记录
         Q->>Q: 计算 mastery_score / weak_score
     end
-    Q->>DB: UPSERT study_records (batch)
-    Q->>DB: UPDATE sync_jobs → succeeded<br/>(records_total / inserted / updated)
+    Q->>DB: UPSERT vocab_words / study_records (batch)
+    Q->>DB: UPDATE sync_jobs → succeeded<br/>(records_total / records_fetched / inserted / updated)
     end
 
     loop 轮询

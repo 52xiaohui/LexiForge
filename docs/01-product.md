@@ -187,18 +187,16 @@ last_response: FAMILIAR / VAGUE / FORGET / WELL_FAMILIAR
 tags: STICKING 等
 ```
 
-当前本地测试数据：
+当前按个人账号中 1000+ 条学习记录的数据规模设计；具体数量和分布会随上游账号状态变化，不作为产品契约。已验证的状态分布类型包括：
 
 ```text
-总学习记录：992
-薄弱词记录：233
 最近反馈：
-- FAMILIAR: 912
-- FORGET: 74
-- VAGUE: 3
-- WELL_FAMILIAR: 3
+- FAMILIAR
+- FORGET
+- VAGUE
+- WELL_FAMILIAR
 标签：
-- STICKING: 169
+- STICKING
 ```
 
 ### 用户授权

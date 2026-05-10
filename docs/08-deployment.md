@@ -80,7 +80,7 @@ graph LR
 
 覆盖 4 周内能跑通的端到端：
 
-- 同步墨墨学习记录（同步执行，校验 records_total / inserted / updated）
+- 同步墨墨学习记录（同步执行，校验 records_total / records_fetched / inserted / updated）
 - 薄弱词查询（按 weak_score 排序、按 last_response 筛选）
 - 文章生成（自动选词、用户勾选 target_word_ids 两条路径）
 - article_words 写入（含覆盖+未覆盖统一保存、unique 约束）
@@ -107,7 +107,7 @@ graph LR
 
 需要 mock：
 
-- MaiMemo Open API（返回固定的 992 条样例数据，覆盖 FAMILIAR / FORGET / VAGUE / WELL_FAMILIAR）
+- MaiMemo Open API（返回固定样例数据，覆盖 FAMILIAR / FORGET / VAGUE / WELL_FAMILIAR；同步 mock 需要包含超过 1000 条、`next_study_date` 乱序、`start/end` 包含边界重复、以及 nullable 日期更新）
 - AI Provider API（返回固定的结构化 covered_words JSON，覆盖正常/虚报 context/missing_words 三类场景）
 
 ### MVP E2E 测试
