@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"lexiforge/backend/internal/user"
 	"lexiforge/backend/internal/vocabulary"
@@ -58,6 +59,18 @@ type LatestSync struct {
 	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
 }
 
+type studyRecordKey struct {
+	provider      string
+	providerVocID string
+}
+
+type normalizedStudyRecord struct {
+	key    studyRecordKey
+	record UpsertStudyRecord
+}
+
+const upsertBatchSize = 500
+
 func (r *Repository) UpsertStudyRecords(records []UpsertStudyRecord) (UpsertResult, error) {
 	result := UpsertResult{RecordsTotal: len(records)}
 	if len(records) == 0 {
@@ -69,28 +82,36 @@ func (r *Repository) UpsertStudyRecords(records []UpsertStudyRecord) (UpsertResu
 		return result, fmt.Errorf("parse local user id: %w", err)
 	}
 
+	normalized, words, err := normalizeStudyRecords(records)
+	if err != nil {
+		return result, err
+	}
+	result.RecordsTotal = len(normalized)
+
 	err = r.db.Transaction(func(tx *gorm.DB) error {
-		for _, record := range records {
-			provider := strings.TrimSpace(record.Provider)
-			providerVocID := strings.TrimSpace(record.ProviderVocID)
-			spelling := strings.TrimSpace(record.Spelling)
-			if provider == "" || providerVocID == "" || spelling == "" {
-				return fmt.Errorf("invalid study record: provider, provider_voc_id and spelling are required")
-			}
-
-			word, err := upsertWord(tx, provider, providerVocID, spelling)
-			if err != nil {
-				return err
-			}
-
-			inserted, err := upsertStudyRecord(tx, userID, word.ID, record)
-			if err != nil {
-				return err
-			}
-			if inserted {
-				result.RecordsInserted++
-			} else {
+		if err := batchUpsertWords(tx, words); err != nil {
+			return err
+		}
+		wordIDs, err := loadWordIDs(tx, normalized)
+		if err != nil {
+			return err
+		}
+		existing, err := loadExistingStudyRecordKeys(tx, userID, normalized)
+		if err != nil {
+			return err
+		}
+		studyRows, err := buildStudyRows(userID, wordIDs, normalized)
+		if err != nil {
+			return err
+		}
+		if err := batchUpsertStudyRows(tx, studyRows); err != nil {
+			return err
+		}
+		for _, item := range normalized {
+			if existing[item.key] {
 				result.RecordsUpdated++
+			} else {
+				result.RecordsInserted++
 			}
 		}
 		return nil
@@ -99,6 +120,201 @@ func (r *Repository) UpsertStudyRecords(records []UpsertStudyRecord) (UpsertResu
 		return result, err
 	}
 	return result, nil
+}
+
+func normalizeStudyRecords(records []UpsertStudyRecord) ([]normalizedStudyRecord, []vocabulary.VocabWord, error) {
+	normalized := make([]normalizedStudyRecord, 0, len(records))
+	indexByKey := make(map[studyRecordKey]int, len(records))
+
+	for _, record := range records {
+		provider := strings.TrimSpace(record.Provider)
+		providerVocID := strings.TrimSpace(record.ProviderVocID)
+		spelling := strings.TrimSpace(record.Spelling)
+		if provider == "" || providerVocID == "" || spelling == "" {
+			return nil, nil, fmt.Errorf("invalid study record: provider, provider_voc_id and spelling are required")
+		}
+
+		record.Provider = provider
+		record.ProviderVocID = providerVocID
+		record.Spelling = spelling
+		key := studyRecordKey{provider: provider, providerVocID: providerVocID}
+		item := normalizedStudyRecord{key: key, record: record}
+		if idx, ok := indexByKey[key]; ok {
+			normalized[idx] = item
+			continue
+		}
+		indexByKey[key] = len(normalized)
+		normalized = append(normalized, item)
+	}
+
+	words := make([]vocabulary.VocabWord, 0, len(normalized))
+	for _, item := range normalized {
+		words = append(words, vocabulary.VocabWord{
+			Provider:      item.record.Provider,
+			ProviderVocID: item.record.ProviderVocID,
+			Spelling:      item.record.Spelling,
+		})
+	}
+	return normalized, words, nil
+}
+
+func batchUpsertWords(tx *gorm.DB, words []vocabulary.VocabWord) error {
+	if len(words) == 0 {
+		return nil
+	}
+	err := tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "provider"}, {Name: "provider_voc_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"spelling",
+			"updated_at",
+		}),
+	}).CreateInBatches(words, upsertBatchSize).Error
+	if err != nil {
+		return fmt.Errorf("batch upsert vocab words: %w", err)
+	}
+	return nil
+}
+
+func loadWordIDs(tx *gorm.DB, records []normalizedStudyRecord) (map[studyRecordKey]uuid.UUID, error) {
+	wordIDs := make(map[studyRecordKey]uuid.UUID, len(records))
+	for _, batch := range studyRecordPairBatches(records, upsertBatchSize) {
+		var words []vocabulary.VocabWord
+		if err := tx.Where("(provider, provider_voc_id) IN ?", batch).Find(&words).Error; err != nil {
+			return nil, fmt.Errorf("load vocab word ids: %w", err)
+		}
+		for _, word := range words {
+			key := studyRecordKey{provider: word.Provider, providerVocID: word.ProviderVocID}
+			wordIDs[key] = word.ID
+		}
+	}
+
+	if len(wordIDs) != len(records) {
+		return nil, fmt.Errorf("load vocab word ids: got %d rows, want %d", len(wordIDs), len(records))
+	}
+	return wordIDs, nil
+}
+
+func loadExistingStudyRecordKeys(tx *gorm.DB, userID uuid.UUID, records []normalizedStudyRecord) (map[studyRecordKey]bool, error) {
+	existingKeys := make(map[studyRecordKey]bool, len(records))
+	for _, batch := range studyRecordPairBatches(records, upsertBatchSize) {
+		var existing []vocabulary.StudyRecord
+		err := tx.Select("provider", "provider_voc_id").
+			Where("user_id = ? AND (provider, provider_voc_id) IN ?", userID, batch).
+			Find(&existing).Error
+		if err != nil {
+			return nil, fmt.Errorf("load existing study records: %w", err)
+		}
+		for _, row := range existing {
+			existingKeys[studyRecordKey{provider: row.Provider, providerVocID: row.ProviderVocID}] = true
+		}
+	}
+	return existingKeys, nil
+}
+
+func buildStudyRows(userID uuid.UUID, wordIDs map[studyRecordKey]uuid.UUID, records []normalizedStudyRecord) ([]vocabulary.StudyRecord, error) {
+	rows := make([]vocabulary.StudyRecord, 0, len(records))
+	for _, item := range records {
+		wordID, ok := wordIDs[item.key]
+		if !ok {
+			return nil, fmt.Errorf("missing vocab word id for %s/%s", item.key.provider, item.key.providerVocID)
+		}
+		row, err := buildStudyRow(userID, wordID, item.record)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func buildStudyRow(userID, wordID uuid.UUID, record UpsertStudyRecord) (vocabulary.StudyRecord, error) {
+	tagsJSON, err := marshalJSON(record.Tags)
+	if err != nil {
+		return vocabulary.StudyRecord{}, fmt.Errorf("marshal tags: %w", err)
+	}
+	reasonsJSON, err := marshalJSON(record.ScoreReasons)
+	if err != nil {
+		return vocabulary.StudyRecord{}, fmt.Errorf("marshal score reasons: %w", err)
+	}
+	rawJSON, err := marshalJSON(record.RawPayload)
+	if err != nil {
+		return vocabulary.StudyRecord{}, fmt.Errorf("marshal raw payload: %w", err)
+	}
+	return vocabulary.StudyRecord{
+		UserID:         userID,
+		WordID:         wordID,
+		Provider:       record.Provider,
+		ProviderVocID:  record.ProviderVocID,
+		LastResponse:   record.LastResponse,
+		StudyCount:     record.StudyCount,
+		Tags:           tagsJSON,
+		AddDate:        record.AddDate,
+		FirstStudyDate: record.FirstStudyDate,
+		LastStudyDate:  record.LastStudyDate,
+		NextStudyDate:  record.NextStudyDate,
+		MasteryScore:   record.MasteryScore,
+		WeakScore:      record.WeakScore,
+		ScoreVersion:   record.ScoreVersion,
+		ScoreReasons:   reasonsJSON,
+		LastScoredAt:   &record.ScoredAt,
+		RawPayload:     rawJSON,
+		SyncedAt:       &record.SyncedAt,
+	}, nil
+}
+
+func batchUpsertStudyRows(tx *gorm.DB, rows []vocabulary.StudyRecord) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	err := tx.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "provider"}, {Name: "provider_voc_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"word_id",
+			"last_response",
+			"study_count",
+			"tags",
+			"add_date",
+			"first_study_date",
+			"last_study_date",
+			"next_study_date",
+			"mastery_score",
+			"weak_score",
+			"score_version",
+			"score_reasons",
+			"last_scored_at",
+			"raw_payload",
+			"synced_at",
+			"updated_at",
+		}),
+	}).CreateInBatches(rows, upsertBatchSize).Error
+	if err != nil {
+		return fmt.Errorf("batch upsert study records: %w", err)
+	}
+	return nil
+}
+
+func studyRecordPairs(records []normalizedStudyRecord) [][]any {
+	pairs := make([][]any, 0, len(records))
+	for _, item := range records {
+		pairs = append(pairs, []any{item.key.provider, item.key.providerVocID})
+	}
+	return pairs
+}
+
+func studyRecordPairBatches(records []normalizedStudyRecord, size int) [][][]any {
+	pairs := studyRecordPairs(records)
+	if len(pairs) == 0 {
+		return nil
+	}
+	batches := make([][][]any, 0, (len(pairs)+size-1)/size)
+	for start := 0; start < len(pairs); start += size {
+		end := start + size
+		if end > len(pairs) {
+			end = len(pairs)
+		}
+		batches = append(batches, pairs[start:end])
+	}
+	return batches
 }
 
 func (r *Repository) LatestSync() (LatestSync, error) {
@@ -130,89 +346,6 @@ func (r *Repository) LatestSync() (LatestSync, error) {
 		RecordsTotal: int(total),
 		LastSyncedAt: latest.SyncedAt,
 	}, nil
-}
-
-func upsertWord(tx *gorm.DB, provider, providerVocID, spelling string) (vocabulary.VocabWord, error) {
-	var word vocabulary.VocabWord
-	err := tx.Where("provider = ? AND provider_voc_id = ?", provider, providerVocID).
-		Assign(vocabulary.VocabWord{Spelling: spelling}).
-		FirstOrCreate(&word, vocabulary.VocabWord{Provider: provider, ProviderVocID: providerVocID}).Error
-	if err != nil {
-		return vocabulary.VocabWord{}, fmt.Errorf("upsert vocab word %s/%s: %w", provider, providerVocID, err)
-	}
-	return word, nil
-}
-
-func upsertStudyRecord(tx *gorm.DB, userID, wordID uuid.UUID, record UpsertStudyRecord) (bool, error) {
-	tagsJSON, err := marshalJSON(record.Tags)
-	if err != nil {
-		return false, fmt.Errorf("marshal tags: %w", err)
-	}
-	reasonsJSON, err := marshalJSON(record.ScoreReasons)
-	if err != nil {
-		return false, fmt.Errorf("marshal score reasons: %w", err)
-	}
-	rawJSON, err := marshalJSON(record.RawPayload)
-	if err != nil {
-		return false, fmt.Errorf("marshal raw payload: %w", err)
-	}
-
-	values := vocabulary.StudyRecord{
-		UserID:         userID,
-		WordID:         wordID,
-		Provider:       record.Provider,
-		ProviderVocID:  record.ProviderVocID,
-		LastResponse:   record.LastResponse,
-		StudyCount:     record.StudyCount,
-		Tags:           tagsJSON,
-		AddDate:        record.AddDate,
-		FirstStudyDate: record.FirstStudyDate,
-		LastStudyDate:  record.LastStudyDate,
-		NextStudyDate:  record.NextStudyDate,
-		MasteryScore:   record.MasteryScore,
-		WeakScore:      record.WeakScore,
-		ScoreVersion:   record.ScoreVersion,
-		ScoreReasons:   reasonsJSON,
-		LastScoredAt:   &record.ScoredAt,
-		RawPayload:     rawJSON,
-		SyncedAt:       &record.SyncedAt,
-	}
-
-	var existing vocabulary.StudyRecord
-	err = tx.Where("user_id = ? AND provider = ? AND provider_voc_id = ?", userID, record.Provider, record.ProviderVocID).
-		First(&existing).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		if err := tx.Create(&values).Error; err != nil {
-			return false, fmt.Errorf("create study record %s/%s: %w", record.Provider, record.ProviderVocID, err)
-		}
-		return true, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("find study record %s/%s: %w", record.Provider, record.ProviderVocID, err)
-	}
-
-	values.ID = existing.ID
-	updates := map[string]any{
-		"word_id":          values.WordID,
-		"last_response":    values.LastResponse,
-		"study_count":      values.StudyCount,
-		"tags":             values.Tags,
-		"add_date":         values.AddDate,
-		"first_study_date": values.FirstStudyDate,
-		"last_study_date":  values.LastStudyDate,
-		"next_study_date":  values.NextStudyDate,
-		"mastery_score":    values.MasteryScore,
-		"weak_score":       values.WeakScore,
-		"score_version":    values.ScoreVersion,
-		"score_reasons":    values.ScoreReasons,
-		"last_scored_at":   values.LastScoredAt,
-		"raw_payload":      values.RawPayload,
-		"synced_at":        values.SyncedAt,
-	}
-	if err := tx.Model(&existing).Updates(updates).Error; err != nil {
-		return false, fmt.Errorf("update study record %s/%s: %w", record.Provider, record.ProviderVocID, err)
-	}
-	return false, nil
 }
 
 func marshalJSON(value any) (datatypes.JSON, error) {

@@ -130,7 +130,10 @@ Use date-range count partitioning for MaiMemo full sync. Treat `start` and
 ## Query Patterns
 
 - Handlers must not query GORM directly. Use handler -> service -> repository.
-- MaiMemo MVP sync may use per-record upserts because the documented MVP data size is about 1000 records.
+- MaiMemo sync should batch upsert `vocab_words` and `study_records` with
+  GORM `CreateInBatches` plus `clause.OnConflict`. Real syncs can exceed 1000
+  records after date-range pagination, and per-record upserts are too slow for
+  repeated full syncs.
 - Sync must update existing `study_records` rather than insert duplicates.
 - Tags and score reasons are stored as JSONB. Query tags with JSON containment, for example `tags @> '["STICKING"]'::jsonb`.
 
