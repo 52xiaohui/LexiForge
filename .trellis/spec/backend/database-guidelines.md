@@ -46,6 +46,15 @@ seeds the fixed `user.LocalUserID` row.
   - `score_version` is `v1`.
   - `score_reasons` is JSONB with integer reason contributions.
   - `synced_at` is set on every sync write.
+- MaiMemo pagination contract:
+  - `POST /study/query_study_records` has a hard `limit` max of 1000.
+  - `next_study_date.start` and `next_study_date.end` are inclusive filters.
+  - Do not rely on returned record order, even when filtering by `next_study_date`.
+  - Full sync must paginate dated records by count-based date-range partitioning:
+    count a date range first; fetch it only when `count <= 1000`; otherwise split
+    the range and recurse.
+  - Because boundaries are inclusive, duplicate records at split boundaries must be
+    de-duplicated by upstream `voc_id` / `provider_voc_id`.
 
 ### 4. Validation & Error Matrix
 
@@ -92,6 +101,29 @@ db.Model(&existing).Updates(updates)
 ```
 
 Use map updates when nullable columns must be overwritten by null values.
+
+#### Wrong
+
+```go
+// query_study_records is not reliably ordered, so this can skip or repeat data.
+nextStart := page.Records[len(page.Records)-1].NextStudyDate
+```
+
+#### Correct
+
+```go
+count := countStudyRecords(start, end)
+if count <= 1000 {
+    fetchStudyRecords(start, end)
+} else {
+    left, right := splitDateRange(start, end)
+    fetchByCountedRange(left)
+    fetchByCountedRange(right)
+}
+```
+
+Use date-range count partitioning for MaiMemo full sync. Treat `start` and
+`end` as inclusive and de-duplicate fetched records by `provider_voc_id`.
 
 ---
 
@@ -196,6 +228,8 @@ Use a throwaway schema so integration tests can run against a developer's local 
 - Do not silently skip malformed upstream records during sync. Failing the sync is easier to debug than hiding partial data loss.
 - Do not log `MAIMEMO_TOKEN` or Authorization values when investigating sync failures.
 - Do not assume MaiMemo `voc_id` fits in 64 characters. Real `voc-*` ids can exceed that length.
+- Do not use the last returned record's `next_study_date` as a pagination
+  cursor for `query_study_records`; real API responses can be unordered.
 
 ---
 
