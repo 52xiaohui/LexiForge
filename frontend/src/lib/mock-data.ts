@@ -1,0 +1,128 @@
+import type {
+  Article,
+  TodayProgress,
+  VocabSummary,
+  WeakWord,
+} from "@/types/api"
+
+export const mockVocabSummary: VocabSummary = {
+  total: 1245,
+  weak: 87,
+  last_synced_at: "2026-05-12T07:42:18+08:00",
+}
+
+export const mockTodayProgress: TodayProgress = {
+  practiced: 12,
+  target: 30,
+}
+
+export const mockRecentArticles: Article[] = [
+  {
+    id: "art_01",
+    title: "The Ephemeral Nature of Modern Attention",
+    topic: "campus life",
+    difficulty: "B2",
+    article_length: "medium",
+    target_word_count: 30,
+    covered_word_count: 29,
+    coverage_rate: 0.9667,
+    created_at: "2026-05-12T06:30:00+08:00",
+  },
+  {
+    id: "art_02",
+    title: "A Candid Letter to a Future Self",
+    topic: "personal growth",
+    difficulty: "B1",
+    article_length: "short",
+    target_word_count: 20,
+    covered_word_count: 19,
+    coverage_rate: 0.95,
+    created_at: "2026-05-11T22:15:00+08:00",
+  },
+  {
+    id: "art_03",
+    title: "Ubiquitous Sensors and the Quiet Cities",
+    topic: "technology and society",
+    difficulty: "C1",
+    article_length: "long",
+    target_word_count: 50,
+    covered_word_count: 45,
+    coverage_rate: 0.9,
+    created_at: "2026-05-10T14:00:00+08:00",
+  },
+  {
+    id: "art_04",
+    title: "On Stoicism in a Bustling Era",
+    topic: "philosophy",
+    difficulty: "B2",
+    article_length: "medium",
+    target_word_count: 25,
+    covered_word_count: 25,
+    coverage_rate: 1,
+    created_at: "2026-05-09T19:45:00+08:00",
+  },
+  {
+    id: "art_05",
+    title: "Why We Procrastinate (And Sometimes Don't)",
+    topic: "psychology",
+    difficulty: "B1",
+    article_length: "short",
+    target_word_count: 22,
+    covered_word_count: 21,
+    coverage_rate: 0.9545,
+    created_at: "2026-05-08T08:20:00+08:00",
+  },
+]
+
+export const mockNextReview: WeakWord[] = [
+  {
+    id: "w_01",
+    spelling: "ephemeral",
+    last_response: "FORGET",
+    study_count: 14,
+    tags: ["STICKING"],
+    mastery_score: 0,
+    weak_score: 164,
+    next_study_date: "2026-05-12T00:00:00+08:00",
+  },
+  {
+    id: "w_02",
+    spelling: "ubiquitous",
+    last_response: "VAGUE",
+    study_count: 9,
+    tags: [],
+    mastery_score: 12,
+    weak_score: 142,
+    next_study_date: "2026-05-12T00:00:00+08:00",
+  },
+  {
+    id: "w_03",
+    spelling: "candor",
+    last_response: "FORGET",
+    study_count: 6,
+    tags: ["STICKING"],
+    mastery_score: 3,
+    weak_score: 138,
+    next_study_date: "2026-05-13T00:00:00+08:00",
+  },
+  {
+    id: "w_04",
+    spelling: "vicarious",
+    last_response: "VAGUE",
+    study_count: 7,
+    tags: [],
+    mastery_score: 18,
+    weak_score: 121,
+    next_study_date: "2026-05-13T00:00:00+08:00",
+  },
+  {
+    id: "w_05",
+    spelling: "perfunctory",
+    last_response: "FAMILIAR",
+    study_count: 11,
+    tags: [],
+    mastery_score: 42,
+    weak_score: 108,
+    next_study_date: "2026-05-14T00:00:00+08:00",
+  },
+]

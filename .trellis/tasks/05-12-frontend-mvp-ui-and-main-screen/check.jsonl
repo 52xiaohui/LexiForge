@@ -1,0 +1,8 @@
+{"file": "docs/02-architecture.md", "reason": "校验技术栈使用是否符合：仅 Vite + React + TS + Tailwind + shadcn/ui + React Router + TanStack Query，没有偏离"}
+{"file": "docs/06-frontend.md", "reason": "校验 Dashboard 信息块覆盖 / 6 个路由占位齐全 / 文章生成页约束（虽本任务只是占位）"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "前端代码质量约束；空模板状态下检查是否被本任务填入基本规则"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "禁用 any / 校验 mock 数据类型与未来 API 类型对齐策略"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "组件命名 / props 形状 / 复用规则；空模板状态下检查是否被本任务填入基础约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "本地 state vs server state（TanStack Query） vs URL state 边界；空模板状态下检查是否被本任务填入基础约定"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查 design tokens / 共享组件抽取是否到位"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 mock data 是否做到与未来 API 形状一致"}
