@@ -1,16 +1,20 @@
 import {
   AlertCircleIcon,
+  CheckmarkCircle02Icon,
   Loading02Icon,
   SparklesIcon,
+  Target02Icon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 
+import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -22,6 +26,7 @@ import type {
   ArticleLength,
   CefrLevel,
   GenerateArticleInput,
+  LastResponse,
 } from "@/types/api"
 
 const MIN_COUNT = 15
@@ -46,6 +51,13 @@ const lengthMedian: Record<ArticleLength, number> = {
   long: 60,
 }
 
+const RESPONSE_ORDER: LastResponse[] = [
+  "FORGET",
+  "VAGUE",
+  "FAMILIAR",
+  "WELL_FAMILIAR",
+]
+
 function recommendLength(n: number): ArticleLength {
   if (n <= 25) return "short"
   if (n <= 40) return "medium"
@@ -67,36 +79,23 @@ export function ArticleNew() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: allWords = [] } = useQuery({
-    queryKey: ["vocab", "words"],
-    queryFn: async () => mockStore.listWords(),
-  })
-
-  const selectedWords = useMemo(() => {
-    if (targetIds.length === 0) return []
-    const map = new Map(allWords.map((w) => [w.id, w]))
-    return targetIds.map((id) => map.get(id)).filter((w) => w !== undefined)
-  }, [targetIds, allWords])
-
   const n = targetIds.length
   const overHardLimit = n > MAX_COUNT
 
-  // Default values derived from URL.
   const defaultLength: ArticleLength = n > 0 ? recommendLength(n) : "medium"
-  const defaultCount = n > 0 ? clamp(Math.max(n, lengthMedian[defaultLength]), MIN_COUNT, MAX_COUNT) : 30
+  const defaultCount =
+    n > 0
+      ? clamp(Math.max(n, lengthMedian[defaultLength]), MIN_COUNT, MAX_COUNT)
+      : 30
 
   const [topic, setTopic] = useState("")
   const [difficulty, setDifficulty] = useState<CefrLevel>("B1")
   const [articleLength, setArticleLength] = useState<ArticleLength>(defaultLength)
   const [count, setCount] = useState(defaultCount)
-  // Track whether the user manually moved the slider so auto-recommendation
-  // (driven by articleLength) does not clobber explicit input.
   const [countTouched, setCountTouched] = useState(false)
+  const [simulateFailure, setSimulateFailure] = useState(false)
 
-  // Reset length / count / touched whenever the URL's ids change, and
-  // re-recommend count whenever the selected length changes (unless the user
-  // has already moved the slider). Both cases use React's "adjust state
-  // during render" pattern rather than effects.
+  // Re-derive defaults when URL ids change or length changes (without effects).
   const [lastIds, setLastIds] = useState(rawIds)
   const [lastLength, setLastLength] = useState(articleLength)
 
@@ -117,14 +116,19 @@ export function ArticleNew() {
     }
   }
 
+  const { data: preview } = useQuery({
+    queryKey: ["generate", "preview", rawIds, count],
+    queryFn: async () => mockStore.generationPreview(targetIds, count),
+  })
+
   const generate = useMutation({
     mutationFn: async (input: GenerateArticleInput) => {
-      // Simulate latency to exercise the loading state.
       await new Promise((r) => setTimeout(r, 900))
       return mockStore.generateArticle(input)
     },
     onSuccess: ({ article_id }) => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
+      queryClient.invalidateQueries({ queryKey: ["vocab", "weak"] })
       navigate(`/articles/${article_id}`)
     },
   })
@@ -136,7 +140,8 @@ export function ArticleNew() {
     topic.trim().length > 0 &&
     countInRange &&
     !overHardLimit &&
-    !selectionExceedsCount
+    !selectionExceedsCount &&
+    !generate.isPending
 
   const firstError = (() => {
     if (topic.trim().length === 0) return "请先输入文章主题"
@@ -156,16 +161,21 @@ export function ArticleNew() {
       target_word_count: count,
       article_length: articleLength,
       ...(n > 0 ? { target_word_ids: targetIds } : {}),
+      ...(simulateFailure ? { simulate_failure: true } : {}),
     }
     generate.mutate(input)
   }
 
   return (
     <div className="grid gap-6 lg:grid-cols-5">
+      {/* Left column — parameters */}
       <div className="space-y-6 lg:col-span-3">
         <Card>
           <CardHeader className="border-b">
-            <CardTitle>文章参数</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <HugeiconsIcon icon={SparklesIcon} size={16} strokeWidth={1.8} />
+              文章参数
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
@@ -268,109 +278,340 @@ export function ArticleNew() {
               </div>
             </div>
 
-            {firstError && (
-              <div className="flex items-start gap-2 rounded-2xl bg-destructive/10 p-3 text-sm text-destructive">
-                <HugeiconsIcon
-                  icon={AlertCircleIcon}
-                  size={16}
-                  strokeWidth={1.8}
-                  className="mt-0.5 shrink-0"
-                />
-                <p className="leading-relaxed">{firstError}</p>
-              </div>
-            )}
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-muted-foreground">
-                生成的文章会保存在历史里。可在详情页重新生成或导出 Markdown。
-              </p>
-              <Button
-                size="default"
-                onClick={handleSubmit}
-                disabled={!canSubmit || generate.isPending}
-              >
-                {generate.isPending ? (
-                  <>
-                    <HugeiconsIcon
-                      icon={Loading02Icon}
-                      data-icon="inline-start"
-                      strokeWidth={1.8}
-                      className="animate-spin"
-                    />
-                    生成中…
-                  </>
-                ) : (
-                  <>
-                    <HugeiconsIcon
-                      icon={SparklesIcon}
-                      data-icon="inline-start"
-                      strokeWidth={1.8}
-                    />
-                    生成文章
-                  </>
-                )}
-              </Button>
-            </div>
+            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Checkbox
+                checked={simulateFailure}
+                onCheckedChange={(v) => setSimulateFailure(v === true)}
+              />
+              模拟生成失败（调试用）
+            </Label>
           </CardContent>
         </Card>
       </div>
 
-      <div className="lg:col-span-2">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle>目标词</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {n === 0 ? (
-              <div className="space-y-3 text-sm text-muted-foreground">
-                <p>当前是自动选词模式，后端会从你的薄弱词自动挑选。</p>
-                <p className="text-xs">
-                  想要精确指定词汇？去{" "}
-                  <a
-                    href="/vocab/weak"
-                    className="underline underline-offset-4 hover:text-foreground"
-                  >
-                    薄弱词页面
-                  </a>{" "}
-                  勾选想练的词再回来。
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="text-xs text-muted-foreground">
-                  来自薄弱词页的勾选 · 共 {n} 个词
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedWords.map((w) => (
-                    <Badge
-                      key={w.id}
-                      variant="outline"
-                      className="text-[11px]"
-                    >
-                      {w.spelling}
-                    </Badge>
-                  ))}
-                  {targetIds.length > selectedWords.length && (
-                    <Badge variant="outline" className="text-[11px] text-muted-foreground">
-                      + {targetIds.length - selectedWords.length} 个未知 id
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  勾选数不足目标词数时，后端会按 70/20/10 比例自动补足剩余名额。
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  推荐长度：
-                  <span className="text-foreground">
-                    {" "}
-                    {formatArticleLength(recommendLength(n))}
-                  </span>
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* Right column — preview + status */}
+      <div className="space-y-4 lg:col-span-2">
+        <PreviewCard
+          words={preview?.words ?? []}
+          countsByResponse={preview?.counts_by_response}
+          stickingCount={preview?.sticking_count ?? 0}
+          autoFillCount={preview?.auto_fill_count ?? 0}
+          isAuto={preview?.is_auto ?? true}
+          totalPicked={n}
+          targetCount={count}
+          recommendedLength={n > 0 ? recommendLength(n) : null}
+        />
+
+        <StatusCard
+          isPending={generate.isPending}
+          isError={generate.isError}
+          error={generate.error}
+          firstError={firstError}
+          canSubmit={canSubmit}
+          onSubmit={handleSubmit}
+          onReset={() => generate.reset()}
+          targetCount={count}
+        />
       </div>
     </div>
+  )
+}
+
+// --------------------------------------------------------------------------------
+// Preview card — what the plan looks like before generation.
+// --------------------------------------------------------------------------------
+
+interface PreviewCardProps {
+  words: { id: string; spelling: string; last_response: LastResponse; tags: string[] }[]
+  countsByResponse: Record<LastResponse, number> | undefined
+  stickingCount: number
+  autoFillCount: number
+  isAuto: boolean
+  totalPicked: number
+  targetCount: number
+  recommendedLength: ArticleLength | null
+}
+
+function PreviewCard({
+  words,
+  countsByResponse,
+  stickingCount,
+  autoFillCount,
+  isAuto,
+  totalPicked,
+  targetCount,
+  recommendedLength,
+}: PreviewCardProps) {
+  const planSize = words.length
+  return (
+    <Card size="sm">
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2">
+          <HugeiconsIcon icon={Target02Icon} size={16} strokeWidth={1.8} />
+          覆盖预览
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="text-xs tracking-wider text-muted-foreground uppercase">
+            计划覆盖
+          </div>
+          <div>
+            <span className="font-heading text-2xl font-semibold tabular-nums">
+              {planSize}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {" "}
+              / {targetCount}
+            </span>
+          </div>
+        </div>
+
+        {countsByResponse && planSize > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {RESPONSE_ORDER.map((resp) => {
+              const c = countsByResponse[resp] ?? 0
+              if (c === 0) return null
+              return (
+                <div
+                  key={resp}
+                  className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]"
+                >
+                  <LastResponseBadge value={resp} className="border-0 bg-transparent px-0" />
+                  <span className="tabular-nums">{c}</span>
+                </div>
+              )
+            })}
+            {stickingCount > 0 && (
+              <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]">
+                <span className="text-muted-foreground">反复忘</span>
+                <span className="tabular-nums">{stickingCount}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {isAuto ? (
+            <>
+              当前是自动选词模式，后端会从你的薄弱词按{" "}
+              <span className="text-foreground">70 / 20 / 10</span>{" "}
+              的比例（遗忘 / 模糊 / 熟悉）挑选。
+            </>
+          ) : (
+            <>
+              来自薄弱词页勾选共 {totalPicked} 个。
+              {autoFillCount > 0 && (
+                <>
+                  {" "}
+                  还差 {autoFillCount} 个名额，后端会按比例自动补足。
+                </>
+              )}
+            </>
+          )}
+        </p>
+
+        {planSize > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {words.slice(0, 24).map((w) => (
+              <Badge
+                key={w.id}
+                variant="outline"
+                className={cn(
+                  "text-[11px]",
+                  w.tags.includes("STICKING") &&
+                    "border-amber-500/40 text-amber-700 dark:text-amber-400",
+                )}
+              >
+                {w.spelling}
+              </Badge>
+            ))}
+            {planSize > 24 && (
+              <Badge variant="outline" className="text-[11px] text-muted-foreground">
+                +{planSize - 24}
+              </Badge>
+            )}
+          </div>
+        )}
+
+        {recommendedLength && (
+          <p className="border-t border-border/60 pt-3 text-xs text-muted-foreground">
+            推荐长度：
+            <span className="text-foreground">
+              {" "}
+              {formatArticleLength(recommendedLength)}
+            </span>
+            ·
+            不够时可以回{" "}
+            <a
+              href="/vocab/weak"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              薄弱词页
+            </a>{" "}
+            增减。
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// --------------------------------------------------------------------------------
+// Status card — idle / generating / error / validation, with CTA.
+// --------------------------------------------------------------------------------
+
+interface StatusCardProps {
+  isPending: boolean
+  isError: boolean
+  error: unknown
+  firstError: string | null
+  canSubmit: boolean
+  onSubmit: () => void
+  onReset: () => void
+  targetCount: number
+}
+
+function StatusCard({
+  isPending,
+  isError,
+  error,
+  firstError,
+  canSubmit,
+  onSubmit,
+  onReset,
+  targetCount,
+}: StatusCardProps) {
+  const errorMessage = isError
+    ? error instanceof Error
+      ? error.message
+      : "生成失败，请稍后再试。"
+    : null
+
+  return (
+    <Card size="sm">
+      <CardHeader className="border-b">
+        <CardTitle className="flex items-center gap-2">
+          {isPending ? (
+            <>
+              <HugeiconsIcon
+                icon={Loading02Icon}
+                size={16}
+                strokeWidth={1.8}
+                className="animate-spin"
+              />
+              生成中
+            </>
+          ) : isError ? (
+            <>
+              <HugeiconsIcon
+                icon={AlertCircleIcon}
+                size={16}
+                strokeWidth={1.8}
+                className="text-destructive"
+              />
+              生成失败
+            </>
+          ) : (
+            <>
+              <HugeiconsIcon
+                icon={CheckmarkCircle02Icon}
+                size={16}
+                strokeWidth={1.8}
+              />
+              准备就绪
+            </>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4 text-sm">
+        {isPending && (
+          <p className="leading-relaxed text-muted-foreground">
+            正在调用模型合成约 {targetCount} 个目标词的英文短文，通常需要 15–30 秒。
+            <span className="block text-xs">
+              生成成功后会自动跳转到文章详情页。
+            </span>
+          </p>
+        )}
+
+        {errorMessage && (
+          <div className="space-y-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+            <p className="leading-relaxed">{errorMessage}</p>
+            <p className="text-xs text-destructive/80">
+              保留了参数，可以直接重试，或者先到
+              <a
+                href="/vocab/weak"
+                className="mx-1 underline underline-offset-4 hover:text-destructive"
+              >
+                薄弱词
+              </a>
+              调整勾选。
+            </p>
+          </div>
+        )}
+
+        {!isPending && !errorMessage && firstError && (
+          <div className="flex items-start gap-2 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">
+            <HugeiconsIcon
+              icon={AlertCircleIcon}
+              size={16}
+              strokeWidth={1.8}
+              className="mt-0.5 shrink-0"
+            />
+            <p className="leading-relaxed">{firstError}</p>
+          </div>
+        )}
+
+        {!isPending && !errorMessage && !firstError && (
+          <p className="leading-relaxed text-muted-foreground">
+            生成的文章会保存在历史里。详情页可以重新生成或导出 Markdown。
+          </p>
+        )}
+
+        <div className="flex items-center gap-2 pt-1">
+          {errorMessage && (
+            <Button variant="outline" size="sm" onClick={onReset}>
+              取消
+            </Button>
+          )}
+          <Button
+            size="default"
+            onClick={onSubmit}
+            disabled={!canSubmit}
+            className="ms-auto"
+          >
+            {isPending ? (
+              <>
+                <HugeiconsIcon
+                  icon={Loading02Icon}
+                  data-icon="inline-start"
+                  strokeWidth={1.8}
+                  className="animate-spin"
+                />
+                生成中…
+              </>
+            ) : errorMessage ? (
+              <>
+                <HugeiconsIcon
+                  icon={SparklesIcon}
+                  data-icon="inline-start"
+                  strokeWidth={1.8}
+                />
+                重试
+              </>
+            ) : (
+              <>
+                <HugeiconsIcon
+                  icon={SparklesIcon}
+                  data-icon="inline-start"
+                  strokeWidth={1.8}
+                />
+                生成文章
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }

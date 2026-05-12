@@ -3,14 +3,10 @@ import {
   AlertCircleIcon,
   Book02Icon,
   Calendar03Icon,
-  SparklesIcon,
 } from "@hugeicons/core-free-icons"
-import { HugeiconsIcon } from "@hugeicons/react"
 import { useQuery } from "@tanstack/react-query"
-import { Link } from "react-router-dom"
 
 import { StatCard } from "@/components/common/StatCard"
-import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
   formatAbsoluteTime,
@@ -19,6 +15,7 @@ import {
 } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
 
+import { NextAction } from "./components/NextAction"
 import { NextReview } from "./components/NextReview"
 import { RecentArticles } from "./components/RecentArticles"
 
@@ -41,6 +38,10 @@ export function Dashboard() {
     queryKey: ["vocab", "next-review"],
     queryFn: async () => mockStore.nextReview(),
   })
+  const { data: unreadArticle } = useQuery({
+    queryKey: ["articles", "first-unread"],
+    queryFn: async () => mockStore.firstUnreadArticle(),
+  })
 
   const total = summary?.total ?? 0
   const weak = summary?.weak ?? 0
@@ -52,32 +53,20 @@ export function Dashboard() {
 
   return (
     <div className="space-y-10">
-      <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-2xl">
+      <section className="space-y-4">
+        <div className="flex items-end justify-between">
           <p className="text-sm tracking-wide text-muted-foreground">
-            {weekdayFormatter.format(new Date())}
-          </p>
-          <h1 className="mt-2 font-heading text-3xl leading-tight font-semibold tracking-tight md:text-[2.25rem]">
-            今天读一篇用你的薄弱词写的文章
-          </h1>
-          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            LexiForge 把你在墨墨背单词积累的学习数据，转化成一篇精确覆盖薄弱词的英文短文。
-            选主题、调难度、生成、阅读——一次闭环。
+            {weekdayFormatter.format(new Date())} · 下一步
           </p>
         </div>
-        <Button asChild size="default" className="self-start sm:self-auto">
-          <Link to="/articles/new">
-            <HugeiconsIcon
-              icon={SparklesIcon}
-              data-icon="inline-start"
-              strokeWidth={1.8}
-            />
-            生成新文章
-          </Link>
-        </Button>
+        <NextAction
+          summary={summary}
+          progress={progress}
+          unreadArticle={unreadArticle ?? null}
+        />
       </section>
 
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <StatCard
           label="总单词数"
           value={formatCount(total)}

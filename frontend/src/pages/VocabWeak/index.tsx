@@ -2,18 +2,36 @@ import {
   AlertCircleIcon,
   ArrowDown01Icon,
   ArrowUp01Icon,
+  CheckmarkCircle02Icon,
+  MoreHorizontalIcon,
   SparklesIcon,
+  ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import {
   Select,
   SelectContent,
@@ -35,15 +53,17 @@ import { cn } from "@/lib/utils"
 import type { LastResponse, VocabWord } from "@/types/api"
 
 type ResponseFilter = "ALL" | LastResponse
-type SortBy = "weak_score" | "study_count"
+type SortBy = "weak_score" | "study_count" | "recently_covered_count"
 type SortDir = "asc" | "desc"
 
 const MAX_SELECTION = 80
 
 export function VocabWeak() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [responseFilter, setResponseFilter] = useState<ResponseFilter>("ALL")
   const [stickingOnly, setStickingOnly] = useState(false)
+  const [hideRecentlyCovered, setHideRecentlyCovered] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>("weak_score")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -51,6 +71,32 @@ export function VocabWeak() {
   const { data = [] } = useQuery({
     queryKey: ["vocab", "weak"],
     queryFn: async () => mockStore.listWeakWords(),
+  })
+
+  const markMastered = useMutation({
+    mutationFn: async (id: string) => mockStore.markWordMastered(id, true),
+    onSuccess: (_, id) => {
+      setSelected((prev) => {
+        if (!prev.has(id)) return prev
+        const copy = new Set(prev)
+        copy.delete(id)
+        return copy
+      })
+      queryClient.invalidateQueries({ queryKey: ["vocab"] })
+    },
+  })
+
+  const ignoreWord = useMutation({
+    mutationFn: async (id: string) => mockStore.toggleWordIgnored(id, true),
+    onSuccess: (_, id) => {
+      setSelected((prev) => {
+        if (!prev.has(id)) return prev
+        const copy = new Set(prev)
+        copy.delete(id)
+        return copy
+      })
+      queryClient.invalidateQueries({ queryKey: ["vocab"] })
+    },
   })
 
   const visible = useMemo(() => {
@@ -61,12 +107,17 @@ export function VocabWeak() {
     if (stickingOnly) {
       rows = rows.filter((w) => w.tags.includes("STICKING"))
     }
+    if (hideRecentlyCovered) {
+      rows = rows.filter((w) => (w.recently_covered_count ?? 0) === 0)
+    }
     rows.sort((a, b) => {
-      const diff = a[sortBy] - b[sortBy]
+      const av = (a[sortBy] as number | undefined) ?? 0
+      const bv = (b[sortBy] as number | undefined) ?? 0
+      const diff = av - bv
       return sortDir === "desc" ? -diff : diff
     })
     return rows
-  }, [data, responseFilter, stickingOnly, sortBy, sortDir])
+  }, [data, responseFilter, stickingOnly, hideRecentlyCovered, sortBy, sortDir])
 
   const selectedCount = selected.size
   const overLimit = selectedCount > MAX_SELECTION
@@ -115,9 +166,12 @@ export function VocabWeak() {
 
   return (
     <div className="space-y-6 pb-20">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          共 {data.length} 个薄弱词 · 勾选你要精练的词，一键生成定向文章
+          共 {data.length} 个薄弱词 · 勾选想练的词，一键生成定向文章
+        </p>
+        <p className="text-xs text-muted-foreground">
+          已掌握 / 忽略的词不再出现在这里
         </p>
       </div>
 
@@ -146,7 +200,15 @@ export function VocabWeak() {
             checked={stickingOnly}
             onCheckedChange={(v) => setStickingOnly(v === true)}
           />
-          只看反复忘（STICKING）
+          只看反复忘
+        </Label>
+
+        <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={hideRecentlyCovered}
+            onCheckedChange={(v) => setHideRecentlyCovered(v === true)}
+          />
+          隐藏最近已覆盖
         </Label>
 
         <div className="ms-auto flex items-center gap-1 text-xs text-muted-foreground">
@@ -191,20 +253,32 @@ export function VocabWeak() {
               </TableHead>
               <TableHead>
                 <SortButton
-                  label="练习次数"
+                  label="练习"
                   active={sortBy === "study_count"}
                   dir={sortDir}
                   onClick={() => toggleSort("study_count")}
                 />
               </TableHead>
+              <TableHead>
+                <SortButton
+                  label="近期覆盖"
+                  active={sortBy === "recently_covered_count"}
+                  dir={sortDir}
+                  onClick={() => toggleSort("recently_covered_count")}
+                />
+              </TableHead>
               <TableHead>标签</TableHead>
-              <TableHead className="pr-4 text-right">下次复习</TableHead>
+              <TableHead className="text-right">下次复习</TableHead>
+              <TableHead className="w-10 pr-4" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {visible.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="py-16 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={10}
+                  className="py-16 text-center text-sm text-muted-foreground"
+                >
                   没有匹配当前筛选的薄弱词。
                 </TableCell>
               </TableRow>
@@ -215,6 +289,8 @@ export function VocabWeak() {
                   word={word}
                   selected={selected.has(word.id)}
                   onToggle={(v) => toggleOne(word.id, v)}
+                  onMaster={() => markMastered.mutate(word.id)}
+                  onIgnore={() => ignoreWord.mutate(word.id)}
                 />
               ))
             )}
@@ -243,7 +319,8 @@ export function VocabWeak() {
                 已勾选 <strong className="tabular-nums">{selectedCount}</strong> 个词
                 {overLimit && (
                   <span className="text-destructive">
-                    {" "}· 超过单篇上限 {MAX_SELECTION}，请拆分成多篇
+                    {" "}
+                    · 超过单篇上限 {MAX_SELECTION}，请拆分成多篇
                   </span>
                 )}
               </span>
@@ -298,15 +375,16 @@ function SortButton({
   )
 }
 
-function WordRow({
-  word,
-  selected,
-  onToggle,
-}: {
+interface WordRowProps {
   word: VocabWord
   selected: boolean
   onToggle: (next: boolean) => void
-}) {
+  onMaster: () => void
+  onIgnore: () => void
+}
+
+function WordRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowProps) {
+  const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
@@ -335,6 +413,18 @@ function WordRow({
       <TableCell className="text-sm tabular-nums text-muted-foreground">
         {word.study_count}
       </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {recentlyCovered > 0 ? (
+          <Badge
+            variant="outline"
+            className="h-5 px-1.5 text-[10px] text-muted-foreground"
+          >
+            近 {recentlyCovered} 篇
+          </Badge>
+        ) : (
+          <span className="text-[11px] text-muted-foreground/60">—</span>
+        )}
+      </TableCell>
       <TableCell>
         {word.tags.includes("STICKING") && (
           <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
@@ -342,9 +432,114 @@ function WordRow({
           </Badge>
         )}
       </TableCell>
-      <TableCell className="pr-4 text-right text-xs text-muted-foreground tabular-nums">
+      <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
         {formatDateShort(word.next_study_date)}
       </TableCell>
+      <TableCell className="pr-4" onClick={(e) => e.stopPropagation()}>
+        <RowActions
+          spelling={word.spelling}
+          onMaster={onMaster}
+          onIgnore={onIgnore}
+        />
+      </TableCell>
     </TableRow>
+  )
+}
+
+interface RowActionsProps {
+  spelling: string
+  onMaster: () => void
+  onIgnore: () => void
+}
+
+function RowActions({ spelling, onMaster, onIgnore }: RowActionsProps) {
+  const [open, setOpen] = useState(false)
+  const [confirm, setConfirm] = useState<"master" | "ignore" | null>(null)
+
+  return (
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${spelling} 操作`}
+            className="text-muted-foreground"
+          >
+            <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.8} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-52 p-1">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              setConfirm("master")
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
+          >
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={14}
+              strokeWidth={1.8}
+            />
+            <span>标记为已掌握</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false)
+              setConfirm("ignore")
+            }}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
+          >
+            <HugeiconsIcon
+              icon={ViewOffSlashIcon}
+              size={14}
+              strokeWidth={1.8}
+            />
+            <span>暂时忽略</span>
+          </button>
+        </PopoverContent>
+      </Popover>
+
+      <AlertDialog
+        open={confirm !== null}
+        onOpenChange={(v) => !v && setConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            {confirm === "master" ? (
+              <>
+                <AlertDialogTitle>把「{spelling}」标记为已掌握？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  它会从薄弱词列表消失，下次生成文章也不再优先挑选。
+                  稍后可以在「全部单词」里改回来。
+                </AlertDialogDescription>
+              </>
+            ) : (
+              <>
+                <AlertDialogTitle>暂时忽略「{spelling}」？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  它会从薄弱词列表消失，但不会被标记为已掌握，下次同步后可能重新出现。
+                </AlertDialogDescription>
+              </>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirm === "master") onMaster()
+                else onIgnore()
+                setConfirm(null)
+              }}
+            >
+              {confirm === "master" ? "标记已掌握" : "忽略"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }
