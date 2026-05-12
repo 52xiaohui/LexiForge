@@ -17,12 +17,7 @@ import {
   formatCount,
   formatRelativeTime,
 } from "@/lib/formatters"
-import {
-  mockNextReview,
-  mockRecentArticles,
-  mockTodayProgress,
-  mockVocabSummary,
-} from "@/lib/mock-data"
+import { mockStore } from "@/lib/mock-data"
 
 import { NextReview } from "./components/NextReview"
 import { RecentArticles } from "./components/RecentArticles"
@@ -32,19 +27,19 @@ const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", { weekday: "long" })
 export function Dashboard() {
   const { data: summary } = useQuery({
     queryKey: ["vocab", "summary"],
-    queryFn: async () => mockVocabSummary,
+    queryFn: async () => mockStore.vocabSummary(),
   })
   const { data: progress } = useQuery({
     queryKey: ["progress", "today"],
-    queryFn: async () => mockTodayProgress,
+    queryFn: async () => mockStore.todayProgress(),
   })
   const { data: articles } = useQuery({
     queryKey: ["articles", "recent"],
-    queryFn: async () => mockRecentArticles,
+    queryFn: async () => mockStore.listRecentArticles(),
   })
   const { data: nextReview } = useQuery({
     queryKey: ["vocab", "next-review"],
-    queryFn: async () => mockNextReview,
+    queryFn: async () => mockStore.nextReview(),
   })
 
   const total = summary?.total ?? 0

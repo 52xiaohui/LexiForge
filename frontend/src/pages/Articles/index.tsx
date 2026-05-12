@@ -1,10 +1,160 @@
-import { ComingSoon } from "@/components/common/ComingSoon"
+import {
+  Delete02Icon,
+  Notebook02Icon,
+  SparklesIcon,
+} from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  formatArticleLength,
+  formatCoverage,
+  formatDifficulty,
+  formatRelativeTime,
+} from "@/lib/formatters"
+import { mockStore } from "@/lib/mock-data"
 
 export function Articles() {
+  const queryClient = useQueryClient()
+  const { data = [] } = useQuery({
+    queryKey: ["articles", "list"],
+    queryFn: async () => mockStore.listArticles(),
+  })
+
+  const deleteArticle = useMutation({
+    mutationFn: async (id: string) => mockStore.deleteArticle(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["articles"] })
+    },
+  })
+
+  if (data.length === 0) {
+    return (
+      <div className="grid min-h-[60vh] place-items-center">
+        <div className="max-w-md text-center">
+          <div className="mx-auto mb-6 grid size-14 place-items-center rounded-3xl bg-muted">
+            <HugeiconsIcon icon={Notebook02Icon} size={22} strokeWidth={1.6} />
+          </div>
+          <div className="font-heading text-2xl font-semibold tracking-tight">
+            还没有文章
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            点击下方按钮，用你的薄弱词生成第一篇文章。
+          </p>
+          <Button asChild size="default" className="mt-6">
+            <Link to="/articles/new">
+              <HugeiconsIcon
+                icon={SparklesIcon}
+                data-icon="inline-start"
+                strokeWidth={1.8}
+              />
+              生成新文章
+            </Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <ComingSoon
-      page="文章历史"
-      description="历史列表、删除、按时间倒序——下个任务实装。"
-    />
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          共 {data.length} 篇文章 · 按生成时间倒序
+        </p>
+        <Button asChild size="sm">
+          <Link to="/articles/new">
+            <HugeiconsIcon
+              icon={SparklesIcon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+            />
+            新文章
+          </Link>
+        </Button>
+      </div>
+
+      <ul className="space-y-3">
+        {data.map((article) => (
+          <li
+            key={article.id}
+            className="group flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 ring-1 ring-foreground/5 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4"
+          >
+            <Link
+              to={`/articles/${article.id}`}
+              className="min-w-0 flex-1 space-y-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="font-heading text-base font-medium leading-snug group-hover:underline">
+                  {article.title}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline" className="text-[10px]">
+                  {formatDifficulty(article.difficulty)}
+                </Badge>
+                <Badge variant="outline" className="text-[10px]">
+                  {formatArticleLength(article.article_length)}
+                </Badge>
+                <span>覆盖 {formatCoverage(article.coverage_rate)}</span>
+                <span aria-hidden>·</span>
+                <span>
+                  {article.covered_word_count} / {article.target_word_count} 词
+                </span>
+                <span aria-hidden>·</span>
+                <span>{article.topic}</span>
+                <span aria-hidden>·</span>
+                <span>{formatRelativeTime(article.created_at)}</span>
+              </div>
+            </Link>
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`删除 ${article.title}`}
+                  className="self-start text-muted-foreground hover:text-destructive sm:self-center"
+                >
+                  <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>删除这篇文章？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    《{article.title}》将从历史中移除，操作不可撤销。
+                    （MVP 阶段删除是前端原型，真实 API 接入后会调用 DELETE /articles/:id。）
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>取消</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => deleteArticle.mutate(article.id)}
+                  >
+                    删除
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

@@ -69,10 +69,33 @@ export function formatLastResponse(value: string): string {
 const difficultyLabels: Record<string, string> = {
   A2: "A2 · 初阶",
   B1: "B1 · 中阶",
+  "B1-B2": "B1–B2 · 中阶",
   B2: "B2 · 中高阶",
   C1: "C1 · 进阶",
 }
 
 export function formatDifficulty(value: string): string {
   return difficultyLabels[value] ?? value
+}
+
+const articleLengthLabels: Record<string, string> = {
+  short: "短文",
+  medium: "中等",
+  long: "长文",
+}
+
+export function formatArticleLength(value: string): string {
+  return articleLengthLabels[value] ?? value
+}
+
+const dateShortFormatter = new Intl.DateTimeFormat("zh-CN", {
+  month: "2-digit",
+  day: "2-digit",
+})
+
+export function formatDateShort(iso: string | null): string {
+  if (!iso) {
+    return "—"
+  }
+  return dateShortFormatter.format(new Date(iso))
 }
