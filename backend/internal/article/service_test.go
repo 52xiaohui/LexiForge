@@ -57,13 +57,14 @@ func (f *fakeAIClient) GenerateArticle(_ context.Context, req ai.GenerateArticle
 
 func TestGenerateRetriesLowCoverageAndSavesAllTargetWords(t *testing.T) {
 	targets := makeTargets(15)
-	content := contentForTargets(targets)
-	firstClaims := claimsForTargets(targets[:1], content)
-	secondClaims := claimsForTargets(targets, content)
+	firstContent := contentForTargets(targets[:1])
+	secondContent := contentForTargets(targets)
+	firstClaims := claimsForTargets(targets[:1], firstContent)
+	secondClaims := claimsForTargets(targets, secondContent)
 	repo := &fakeArticleRepo{targets: targets}
 	aiClient := &fakeAIClient{resps: []*ai.GenerateArticleResponse{
-		{Title: "First", ContentMarkdown: content, CoveredWords: firstClaims, MissingWords: []string{"word1"}},
-		{Title: "Second", ContentMarkdown: content, CoveredWords: secondClaims, MissingWords: []string{}},
+		{Title: "First", ContentMarkdown: firstContent, CoveredWords: firstClaims, MissingWords: []string{"word1"}},
+		{Title: "Second", ContentMarkdown: secondContent, CoveredWords: secondClaims, MissingWords: []string{}},
 	}}
 	svc := NewService(repo, aiClient)
 
@@ -126,6 +127,63 @@ func TestLocateClaimUsesUnicodeCodePointOffsets(t *testing.T) {
 	}
 	if got.CharLength == nil || *got.CharLength != len([]rune(form)) {
 		t.Fatalf("CharLength = %v, want %d", got.CharLength, len([]rune(form)))
+	}
+}
+
+func TestLocateCoverageFallsBackToBoldSpelling(t *testing.T) {
+	wordID := uuid.New()
+	words, covered := locateCoverage("Students joined a **campaign** today.", []TargetWordRecord{
+		{WordID: wordID, Spelling: "campaign"},
+	}, nil)
+	if covered != 1 || len(words) != 1 || !words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want one covered word", covered, words)
+	}
+	if words[0].CharOffset == nil || *words[0].CharOffset != len([]rune("Students joined a **")) {
+		t.Fatalf("CharOffset = %v, want bold spelling offset", words[0].CharOffset)
+	}
+}
+
+func TestLocateCoverageVerifiesClaimBeforeCounting(t *testing.T) {
+	target := TargetWordRecord{WordID: uuid.New(), Spelling: "fund"}
+	badClaims := []ai.CoveredWord{{
+		Spelling:      "fund",
+		Form:          "fund",
+		Occurrence:    1,
+		ContextBefore: "wrong ",
+		ContextAfter:  " context",
+	}}
+
+	words, covered := locateCoverage("The fundraising drive did not use the target.", []TargetWordRecord{target}, badClaims)
+	if covered != 0 || len(words) != 1 || words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want bad claim rejected", covered, words)
+	}
+
+	words, covered = locateCoverage("The drive will **fund** the center.", []TargetWordRecord{target}, badClaims)
+	if covered != 1 || !words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want fallback to actual content", covered, words)
+	}
+}
+
+func TestLocateCoverageFallbackUsesWordBoundaries(t *testing.T) {
+	target := TargetWordRecord{WordID: uuid.New(), Spelling: "fund"}
+	words, covered := locateCoverage("The fundraising drive did not use the target.", []TargetWordRecord{target}, nil)
+	if covered != 0 || len(words) != 1 || words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want no substring coverage", covered, words)
+	}
+	words, covered = locateCoverage("The fundraising drive will **fund** the center.", []TargetWordRecord{target}, nil)
+	if covered != 1 || !words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want bold whole-word coverage", covered, words)
+	}
+}
+
+func TestLocateCoverageFallbackAcceptsSimplePluralForm(t *testing.T) {
+	target := TargetWordRecord{WordID: uuid.New(), Spelling: "pound"}
+	words, covered := locateCoverage("The project received fifty thousand **pounds**.", []TargetWordRecord{target}, nil)
+	if covered != 1 || len(words) != 1 || !words[0].IsCovered {
+		t.Fatalf("coverage = %d, words = %#v, want plural form coverage", covered, words)
+	}
+	if words[0].Form == nil || *words[0].Form != "pounds" {
+		t.Fatalf("form = %v, want pounds", words[0].Form)
 	}
 }
 

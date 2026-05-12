@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -139,14 +140,14 @@ func (c *OpenAIClient) GenerateArticle(ctx context.Context, req GenerateArticleR
 		return nil, fmt.Errorf("%w: empty chat content", ErrInvalidAIResponse)
 	}
 
-	var out GenerateArticleResponse
-	if err := json.Unmarshal([]byte(chatResp.Choices[0].Message.Content), &out); err != nil {
-		return nil, fmt.Errorf("%w: decode article json: %v", ErrInvalidAIResponse, err)
+	out, err := parseArticleContent(chatResp.Choices[0].Message.Content, req)
+	if err != nil {
+		return nil, err
 	}
 	out.ModelName = chatResp.Model
 	out.InputTokens = chatResp.Usage.PromptTokens
 	out.OutputTokens = chatResp.Usage.CompletionTokens
-	return &out, nil
+	return out, nil
 }
 
 type chatCompletionRequest struct {
@@ -184,7 +185,7 @@ type chatCompletionResponse struct {
 }
 
 func articleSystemPrompt() string {
-	return `You generate natural English learning articles for vocabulary practice. Return only JSON matching the schema. For each covered word, context_before and context_after must be exact verbatim characters immediately adjacent to form in content_markdown. Do not generate exercises.`
+	return `You generate natural English learning articles for vocabulary practice. Return only a raw JSON object matching the schema. Do not wrap it in markdown fences. Use exact field names: title, content_markdown, summary, covered_words, missing_words, and covered_words[].spelling/form/occurrence/context_before/context_after. Do not use "word" instead of "spelling". For each covered word, context_before and context_after must be exact verbatim characters immediately adjacent to form in content_markdown. Do not generate exercises.`
 }
 
 func articleUserPrompt(req GenerateArticleRequest) string {
@@ -226,4 +227,142 @@ func articleResponseSchema() map[string]any {
 
 func joinURL(baseURL, path string) string {
 	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(path, "/")
+}
+
+type articleContentWire struct {
+	Title           string            `json:"title"`
+	ContentMarkdown string            `json:"content_markdown"`
+	Summary         string            `json:"summary"`
+	CoveredWords    []coveredWordWire `json:"covered_words"`
+	MissingWords    []string          `json:"missing_words"`
+}
+
+type coveredWordWire struct {
+	Spelling      string             `json:"spelling"`
+	Word          string             `json:"word"`
+	Form          string             `json:"form"`
+	Occurrence    flexibleOccurrence `json:"occurrence"`
+	ContextBefore string             `json:"context_before"`
+	ContextAfter  string             `json:"context_after"`
+}
+
+type flexibleOccurrence int
+
+func (o *flexibleOccurrence) UnmarshalJSON(data []byte) error {
+	var number int
+	if err := json.Unmarshal(data, &number); err == nil {
+		*o = flexibleOccurrence(number)
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(data, &text); err == nil {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil
+		}
+		parsed, err := strconv.Atoi(text)
+		if err != nil {
+			return fmt.Errorf("parse occurrence: %w", err)
+		}
+		*o = flexibleOccurrence(parsed)
+		return nil
+	}
+	return fmt.Errorf("occurrence must be an integer or numeric string")
+}
+
+func parseArticleContent(content string, req GenerateArticleRequest) (*GenerateArticleResponse, error) {
+	cleaned := extractJSONObject(content)
+	var wire articleContentWire
+	if err := json.Unmarshal([]byte(cleaned), &wire); err != nil {
+		return nil, fmt.Errorf("%w: decode article json: %v", ErrInvalidAIResponse, err)
+	}
+	out := GenerateArticleResponse{
+		Title:           strings.TrimSpace(wire.Title),
+		ContentMarkdown: strings.TrimSpace(wire.ContentMarkdown),
+		Summary:         strings.TrimSpace(wire.Summary),
+		MissingWords:    wire.MissingWords,
+	}
+	if out.Title == "" {
+		out.Title = fallbackTitle(req.Topic)
+	}
+	if out.Summary == "" {
+		out.Summary = fallbackSummary(out.ContentMarkdown)
+	}
+	if out.MissingWords == nil {
+		out.MissingWords = []string{}
+	}
+	for _, word := range wire.CoveredWords {
+		normalized := normalizeCoveredWord(word)
+		if normalized.Spelling == "" || normalized.Form == "" {
+			continue
+		}
+		out.CoveredWords = append(out.CoveredWords, normalized)
+	}
+	if out.ContentMarkdown == "" {
+		return nil, fmt.Errorf("%w: empty content_markdown", ErrInvalidAIResponse)
+	}
+	return &out, nil
+}
+
+func extractJSONObject(content string) string {
+	cleaned := strings.TrimSpace(content)
+	if strings.HasPrefix(cleaned, "```") {
+		cleaned = strings.TrimPrefix(cleaned, "```json")
+		cleaned = strings.TrimPrefix(cleaned, "```JSON")
+		cleaned = strings.TrimPrefix(cleaned, "```")
+		cleaned = strings.TrimSpace(cleaned)
+		if strings.HasSuffix(cleaned, "```") {
+			cleaned = strings.TrimSpace(strings.TrimSuffix(cleaned, "```"))
+		}
+	}
+	start := strings.Index(cleaned, "{")
+	end := strings.LastIndex(cleaned, "}")
+	if start >= 0 && end >= start {
+		return cleaned[start : end+1]
+	}
+	return cleaned
+}
+
+func normalizeCoveredWord(word coveredWordWire) CoveredWord {
+	spelling := strings.TrimSpace(word.Spelling)
+	if spelling == "" {
+		spelling = strings.TrimSpace(word.Word)
+	}
+	form := strings.TrimSpace(word.Form)
+	if form == "" {
+		form = spelling
+	}
+	occurrence := int(word.Occurrence)
+	if occurrence < 1 {
+		occurrence = 1
+	}
+	return CoveredWord{
+		Spelling:      spelling,
+		Form:          form,
+		Occurrence:    occurrence,
+		ContextBefore: word.ContextBefore,
+		ContextAfter:  word.ContextAfter,
+	}
+}
+
+func fallbackTitle(topic string) string {
+	topic = strings.TrimSpace(topic)
+	if topic == "" {
+		return "Generated Article"
+	}
+	return topic
+}
+
+func fallbackSummary(content string) string {
+	content = strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	if content == "" {
+		return ""
+	}
+	if dot := strings.Index(content, "."); dot >= 0 && dot < 240 {
+		return content[:dot+1]
+	}
+	if len(content) > 240 {
+		return content[:240]
+	}
+	return content
 }

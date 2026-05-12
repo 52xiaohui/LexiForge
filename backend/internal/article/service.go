@@ -7,6 +7,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -354,7 +356,15 @@ func locateCoverage(content string, targets []TargetWordRecord, claims []ai.Cove
 				draft.WordID = target.WordID
 				draft.Spelling = target.Spelling
 				covered++
+				words = append(words, draft)
+				continue
 			}
+		}
+		if located, found := locateSpelling(content, target.Spelling); found {
+			draft = located
+			draft.WordID = target.WordID
+			draft.Spelling = target.Spelling
+			covered++
 		}
 		words = append(words, draft)
 	}
@@ -404,6 +414,116 @@ func findNth(content, needle string, occurrence int) int {
 		offset += index + len(needle)
 	}
 	return -1
+}
+
+func locateSpelling(content, spelling string) (ArticleWordDraft, bool) {
+	spelling = strings.TrimSpace(spelling)
+	if content == "" || spelling == "" {
+		return ArticleWordDraft{}, false
+	}
+	var byteStart int
+	var form string
+	for _, candidate := range spellingForms(spelling) {
+		byteStart = findEmphasizedSpelling(content, candidate)
+		if byteStart < 0 {
+			byteStart = findWholeSpelling(content, candidate)
+		}
+		if byteStart >= 0 {
+			form = candidate
+			break
+		}
+	}
+	if byteStart < 0 {
+		return ArticleWordDraft{}, false
+	}
+	byteEnd := byteStart + len(form)
+	if byteEnd > len(content) {
+		return ArticleWordDraft{}, false
+	}
+	form = content[byteStart:byteEnd]
+	occurrence := 1
+	before, after := contextWindow(content, byteStart, byteEnd, 16)
+	charOffset := len([]rune(content[:byteStart]))
+	charLength := len([]rune(form))
+	return ArticleWordDraft{
+		Form:          &form,
+		Occurrence:    &occurrence,
+		ContextBefore: &before,
+		ContextAfter:  &after,
+		CharOffset:    &charOffset,
+		CharLength:    &charLength,
+		IsCovered:     true,
+	}, true
+}
+
+func spellingForms(spelling string) []string {
+	forms := []string{spelling}
+	if !strings.HasSuffix(strings.ToLower(spelling), "s") {
+		forms = append(forms, spelling+"s")
+	}
+	return forms
+}
+
+func findEmphasizedSpelling(content, form string) int {
+	patterns := []string{"**" + form + "**", "*" + form + "*"}
+	lowerContent := strings.ToLower(content)
+	for _, pattern := range patterns {
+		lowerPattern := strings.ToLower(pattern)
+		if index := strings.Index(lowerContent, lowerPattern); index >= 0 {
+			return index + strings.Index(pattern, form)
+		}
+	}
+	return -1
+}
+
+func findWholeSpelling(content, form string) int {
+	lowerContent := strings.ToLower(content)
+	lowerSpelling := strings.ToLower(form)
+	offset := 0
+	for {
+		index := strings.Index(lowerContent[offset:], lowerSpelling)
+		if index < 0 {
+			return -1
+		}
+		byteStart := offset + index
+		byteEnd := byteStart + len(lowerSpelling)
+		if isWordBoundary(lowerContent, byteStart, byteEnd) {
+			return byteStart
+		}
+		offset = byteStart + len(lowerSpelling)
+	}
+}
+
+func isWordBoundary(content string, byteStart, byteEnd int) bool {
+	if byteStart > 0 {
+		prev, _ := utf8.DecodeLastRuneInString(content[:byteStart])
+		if isWordRune(prev) {
+			return false
+		}
+	}
+	if byteEnd < len(content) {
+		next, _ := utf8.DecodeRuneInString(content[byteEnd:])
+		if isWordRune(next) {
+			return false
+		}
+	}
+	return true
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '\''
+}
+
+func contextWindow(content string, byteStart, byteEnd, size int) (string, string) {
+	beforeRunes := []rune(content[:byteStart])
+	afterRunes := []rune(content[byteEnd:])
+	if len(beforeRunes) > size {
+		beforeRunes = beforeRunes[len(beforeRunes)-size:]
+	}
+	if len(afterRunes) > size {
+		afterRunes = afterRunes[:size]
+	}
+	return string(beforeRunes), string(afterRunes)
 }
 
 func missingSpellings(words []ArticleWordDraft) []string {

@@ -65,3 +65,46 @@ func TestOpenAIClientMissingKey(t *testing.T) {
 		t.Fatalf("error = %v, want ErrAPIKeyMissing", err)
 	}
 }
+
+func TestOpenAIClientNormalizesLooseJSONSchemaResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		content := "```json\n" +
+			`{"content_markdown":"Students **fund** a club project.","covered_words":[{"word":"fund","occurrence":"1","context_before":"Students **","context_after":"** a"}]}` +
+			"\n```"
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model": "kimi-test",
+			"choices": []any{
+				map[string]any{"message": chatMessage{Role: "assistant", Content: content}},
+			},
+			"usage": map[string]int{"prompt_tokens": 1, "completion_tokens": 2},
+		})
+	}))
+	defer server.Close()
+
+	client := NewOpenAIClient(config.Config{
+		OpenAIAPIKey:  "test-key",
+		OpenAIBaseURL: server.URL,
+		OpenAIModel:   "kimi-test",
+	})
+	got, err := client.GenerateArticle(context.Background(), GenerateArticleRequest{
+		Topic:           "campus life",
+		Difficulty:      "B1",
+		TargetWordCount: 1,
+		ArticleLength:   "short",
+		TargetWords:     []TargetWord{{Word: "fund"}},
+	})
+	if err != nil {
+		t.Fatalf("GenerateArticle returned error: %v", err)
+	}
+	if got.Title != "campus life" || got.Summary == "" || len(got.MissingWords) != 0 {
+		t.Fatalf("fallback fields = %#v, want title/summary/empty missing words", got)
+	}
+	if len(got.CoveredWords) != 1 {
+		t.Fatalf("covered words = %d, want 1", len(got.CoveredWords))
+	}
+	word := got.CoveredWords[0]
+	if word.Spelling != "fund" || word.Form != "fund" || word.Occurrence != 1 {
+		t.Fatalf("covered word = %#v, want normalized spelling/form/occurrence", word)
+	}
+}
