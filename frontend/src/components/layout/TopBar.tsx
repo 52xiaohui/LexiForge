@@ -94,30 +94,22 @@ export function TopBar({ onMobileMenuClick }: TopBarProps) {
 }
 
 function ThemeToggle() {
-  const { theme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
 
   const toggle = () => {
-    const resolved =
-      theme === "system"
-        ? window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light"
-        : theme
-    setTheme(resolved === "dark" ? "light" : "dark")
+    setTheme(resolvedTheme === "dark" ? "light" : "dark")
   }
 
-  // Eager resolution so the icon matches the current rendered theme (matters
-  // when the user is on "system"). The rendered icon represents the theme you
-  // will *switch to*, which is the industry-standard pattern.
+  // The icon represents the theme the button will *switch to*, which is the
+  // standard pattern. Driving it off `resolvedTheme` ensures the icon stays
+  // accurate when the user is on `system` and the OS flips its preference.
   const nextIcon: IconSvgElement =
-    theme === "dark" || (theme === "system" && matchMediaDarkIfAvailable())
-      ? Sun01Icon
-      : Moon02Icon
+    resolvedTheme === "dark" ? Sun01Icon : Moon02Icon
 
   const label =
-    theme === "dark" || (theme === "system" && matchMediaDarkIfAvailable())
-      ? "切换到浅色模式"
-      : "切换到深色模式"
+    resolvedTheme === "dark" ? "切换到浅色模式" : "切换到深色模式"
+
+  const systemHint = theme === "system" ? " · 当前跟随系统" : ""
 
   return (
     <Tooltip>
@@ -132,15 +124,10 @@ function ThemeToggle() {
         </Button>
       </TooltipTrigger>
       <TooltipContent>
-        {label} <span className="opacity-60">(按 D)</span>
+        {label} <span className="opacity-60">(按 D{systemHint})</span>
       </TooltipContent>
     </Tooltip>
   )
-}
-
-function matchMediaDarkIfAvailable(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false
-  return window.matchMedia("(prefers-color-scheme: dark)").matches
 }
 
 interface SyncStatusButtonProps {
@@ -171,6 +158,11 @@ function SyncStatusButton({ lastSyncedAt }: SyncStatusButtonProps) {
           size="sm"
           aria-label={a11yLabel}
           className={cn(
+            // Below `sm` there is no label; collapse the pill into a square
+            // icon-sized button so it doesn't render as an empty stretched
+            // pill next to the icon-sm Menu button. The `!` overrides
+            // size="sm"'s built-in `has-data-[icon=inline-start]:pl-2`.
+            "aspect-square w-8 !px-0 sm:aspect-auto sm:w-auto sm:!px-3 sm:has-data-[icon=inline-start]:!pl-2",
             "tabular-nums",
             status === "stale" &&
               "border-destructive/40 text-destructive hover:text-destructive",

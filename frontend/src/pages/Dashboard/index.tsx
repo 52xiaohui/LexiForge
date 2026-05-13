@@ -29,7 +29,7 @@ import { RecentArticles } from "./components/RecentArticles"
 const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", { weekday: "long" })
 
 export function Dashboard() {
-  const { data: summary } = useQuery({
+  const { data: summary, isPending: isSummaryPending } = useQuery({
     queryKey: ["vocab", "summary"],
     queryFn: async () => mockStore.vocabSummary(),
   })
@@ -80,6 +80,7 @@ export function Dashboard() {
               summary={summary}
               progress={progress}
               unreadArticle={unreadArticle ?? null}
+              isLoading={isSummaryPending}
             />
           </section>
 
@@ -112,9 +113,13 @@ export function Dashboard() {
                 </span>
               }
               hint={
-                streakDays > 0
-                  ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
-                  : `已练 ${progressPct}%`
+                target > 0
+                  ? streakDays > 0
+                    ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
+                    : `已练 ${progressPct}%`
+                  : streakDays > 0
+                    ? `今天还没有目标 · 连续 ${streakDays} 天`
+                    : "今天还没有目标"
               }
               icon={Activity03Icon}
               footer={<Progress value={progressPct} className="h-1.5" />}

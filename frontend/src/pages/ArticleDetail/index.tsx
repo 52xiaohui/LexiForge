@@ -251,18 +251,21 @@ export function ArticleDetail() {
   }
 
   // Global keyboard shortcuts — avoid handling when focus is in form inputs.
+  // Only react to the explicit letter keys (N/P/F) and Shift+Arrow combos so
+  // plain ArrowLeft / ArrowRight continue to scroll the page natively.
   useEffect(() => {
     if (!article) return
     const handler = (e: KeyboardEvent) => {
       if (isEditableTarget(e.target)) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === "ArrowRight" || e.key.toLowerCase() === "n") {
+      const key = e.key.toLowerCase()
+      if (key === "n" || (e.shiftKey && e.key === "ArrowRight")) {
         e.preventDefault()
         jumpToTarget(1)
-      } else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "p") {
+      } else if (key === "p" || (e.shiftKey && e.key === "ArrowLeft")) {
         e.preventDefault()
         jumpToTarget(-1)
-      } else if (e.key.toLowerCase() === "f") {
+      } else if (!e.shiftKey && key === "f") {
         e.preventDefault()
         toggleFocusMode()
       }
@@ -509,7 +512,7 @@ function ReadingProgress() {
       aria-valuenow={Math.round(progress)}
       aria-valuemin={0}
       aria-valuemax={100}
-      className="sticky top-16 z-20 -mx-6 h-[2px] bg-transparent lg:-mx-10"
+      className="sticky top-16 z-20 h-[2px] overflow-hidden rounded-full bg-border/40"
     >
       <div
         className="h-full bg-foreground transition-[width] duration-150"
@@ -613,7 +616,7 @@ function ReadingToolbar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              上一个 <span className="opacity-60">(← / P)</span>
+              上一个 <span className="opacity-60">(P / Shift + ←)</span>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -628,7 +631,7 @@ function ReadingToolbar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              下一个 <span className="opacity-60">(→ / N)</span>
+              下一个 <span className="opacity-60">(N / Shift + →)</span>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -887,7 +890,7 @@ function FinishBar({
                 <AlertDialogTitle>确认批量标记已掌握？</AlertDialogTitle>
                 <AlertDialogDescription>
                   这 {coveredCount} 个词会从薄弱词列表消失，下次生成文章也不再优先挑选。
-                  标记后会弹出撤销提示，5 秒内可以回退。
+                  标记后会弹出撤销提示，可以在几秒内回退。
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

@@ -7,11 +7,11 @@ import { useTheme } from "@/components/theme-provider"
  * in both light and dark mode, and maps Sonner slots to our design tokens.
  */
 export function Toaster(props: React.ComponentProps<typeof SonnerToaster>) {
-  const { theme } = useTheme()
+  const { resolvedTheme } = useTheme()
 
   return (
     <SonnerToaster
-      theme={theme === "system" ? undefined : theme}
+      theme={resolvedTheme}
       position="bottom-right"
       closeButton
       richColors={false}

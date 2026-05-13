@@ -509,6 +509,11 @@ function WordTableRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowP
  * Mobile card equivalent of WordTableRow. Targets <md screens where the 10
  * column table would force horizontal scroll. Keeps the same selection /
  * action semantics so behaviour doesn't diverge across breakpoints.
+ *
+ * The outer card is a plain clickable container (role="button") that toggles
+ * the inner real <Checkbox>, so screen readers only see a single checkbox
+ * per row. Keyboard users can press Space / Enter on the card to toggle, or
+ * Tab into the inner checkbox and activate directly.
  */
 function WordCardRow({
   word,
@@ -520,10 +525,10 @@ function WordCardRow({
   const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <div
-      role="checkbox"
+      role="button"
       tabIndex={0}
-      aria-checked={selected}
-      aria-label={`${word.spelling}，${word.translation}`}
+      aria-pressed={selected}
+      aria-label={`选择 ${word.spelling}，${word.translation}`}
       onClick={() => onToggle(!selected)}
       onKeyDown={(e) => {
         if (e.key === " " || e.key === "Enter") {

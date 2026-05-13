@@ -21,6 +21,12 @@ export interface NextActionProps {
   summary: VocabSummary | undefined
   progress: TodayProgress | undefined
   unreadArticle: Article | null | undefined
+  /**
+   * When true, the vocab summary query is still fetching. The component
+   * renders a neutral skeleton so the user doesn't see a flashed "同步异常"
+   * card before the real state is known.
+   */
+  isLoading?: boolean
 }
 
 type Tone = "primary" | "sync" | "generate" | "done"
@@ -160,7 +166,31 @@ function computePlan(
   }
 }
 
-export function NextAction({ summary, progress, unreadArticle }: NextActionProps) {
+export function NextAction({ summary, progress, unreadArticle, isLoading }: NextActionProps) {
+  // While the summary is still loading we can't tell whether the user is in
+  // the "sync stale" branch or not. Render a neutral skeleton to avoid a
+  // flash of the destructive "同步异常" card on first mount.
+  if (isLoading && summary === undefined) {
+    return (
+      <section className="relative overflow-hidden rounded-3xl bg-card p-6 ring-1 ring-foreground/10 sm:p-8">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-1 items-start gap-4">
+            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-muted" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-3 w-20 rounded-full bg-muted" />
+              <div className="h-6 w-3/4 rounded-full bg-muted" />
+              <div className="h-4 w-full max-w-md rounded-full bg-muted/70" />
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 sm:justify-end">
+            <div className="h-9 w-28 rounded-full bg-muted" />
+            <div className="h-9 w-24 rounded-full bg-muted/70" />
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   const plan = computePlan(summary, progress, unreadArticle)
   const tone = toneStyles[plan.tone]
   const isDark = plan.tone === "primary"

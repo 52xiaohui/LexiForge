@@ -13,6 +13,12 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme
+  /**
+   * The concrete theme currently applied to `<html>` — always "dark" or
+   * "light". When `theme === "system"` this tracks the OS preference and
+   * updates when `prefers-color-scheme` flips.
+   */
+  resolvedTheme: ResolvedTheme
   setTheme: (theme: Theme) => void
 }
 
@@ -31,12 +37,20 @@ function isTheme(value: string | null): value is Theme {
   return THEME_VALUES.includes(value as Theme)
 }
 
-function getSystemTheme(): ResolvedTheme {
-  if (window.matchMedia(COLOR_SCHEME_QUERY).matches) {
-    return "dark"
+function subscribeSystemTheme(onChange: () => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return () => {}
   }
+  const mq = window.matchMedia(COLOR_SCHEME_QUERY)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
 
-  return "light"
+function getSystemTheme(): ResolvedTheme {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return "light"
+  }
+  return window.matchMedia(COLOR_SCHEME_QUERY).matches ? "dark" : "light"
 }
 
 function disableTransitionsTemporarily() {
@@ -93,6 +107,18 @@ export function ThemeProvider({
     return defaultTheme
   })
 
+  // Subscribe to `prefers-color-scheme` via useSyncExternalStore so the
+  // provider re-renders whenever the OS theme flips while in "system" mode.
+  // This keeps every consumer of `resolvedTheme` (ThemeToggle, Sonner, etc.)
+  // in sync without a stateful effect.
+  const systemTheme = React.useSyncExternalStore(
+    subscribeSystemTheme,
+    getSystemTheme,
+    () => "light" as ResolvedTheme,
+  )
+  const resolvedTheme: ResolvedTheme =
+    theme === "system" ? systemTheme : theme
+
   const setTheme = React.useCallback(
     (nextTheme: Theme) => {
       localStorage.setItem(storageKey, nextTheme)
@@ -101,43 +127,23 @@ export function ThemeProvider({
     [storageKey]
   )
 
-  const applyTheme = React.useCallback(
-    (nextTheme: Theme) => {
-      const root = document.documentElement
-      const resolvedTheme =
-        nextTheme === "system" ? getSystemTheme() : nextTheme
-      const restoreTransitions = disableTransitionOnChange
-        ? disableTransitionsTemporarily()
-        : null
+  // Apply the resolved theme as a class on <html>. Pure DOM side-effect — no
+  // React state is touched here so this effect can't trigger extra renders.
+  React.useEffect(() => {
+    const root = document.documentElement
+    const restoreTransitions = disableTransitionOnChange
+      ? disableTransitionsTemporarily()
+      : null
 
-      root.classList.remove("light", "dark")
-      root.classList.add(resolvedTheme)
+    root.classList.remove("light", "dark")
+    root.classList.add(resolvedTheme)
 
+    return () => {
       if (restoreTransitions) {
         restoreTransitions()
       }
-    },
-    [disableTransitionOnChange]
-  )
-
-  React.useEffect(() => {
-    applyTheme(theme)
-
-    if (theme !== "system") {
-      return undefined
     }
-
-    const mediaQuery = window.matchMedia(COLOR_SCHEME_QUERY)
-    const handleChange = () => {
-      applyTheme("system")
-    }
-
-    mediaQuery.addEventListener("change", handleChange)
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange)
-    }
-  }, [theme, applyTheme])
+  }, [resolvedTheme, disableTransitionOnChange])
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -207,9 +213,10 @@ export function ThemeProvider({
   const value = React.useMemo(
     () => ({
       theme,
+      resolvedTheme,
       setTheme,
     }),
-    [theme, setTheme]
+    [theme, resolvedTheme, setTheme]
   )
 
   return (

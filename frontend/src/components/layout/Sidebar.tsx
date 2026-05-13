@@ -81,6 +81,10 @@ export function Sidebar({
         className={cn(
           "mb-8 flex items-center gap-2.5",
           isCollapsed ? "justify-center" : "px-2",
+          // Reserve room for the Sheet's default close X (absolute top-4
+          // right-4) so the brand row doesn't collide with it in the
+          // mobile drawer.
+          variant === "drawer" && "pr-10",
         )}
       >
         <LexiForgeMark />

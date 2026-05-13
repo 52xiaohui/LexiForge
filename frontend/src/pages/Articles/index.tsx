@@ -154,7 +154,7 @@ export function Articles() {
                   variant="ghost"
                   size="icon-sm"
                   aria-label={`删除 ${article.title}`}
-                  className="self-start text-muted-foreground hover:text-destructive sm:self-center"
+                  className="self-end text-muted-foreground hover:text-destructive sm:self-center"
                 >
                   <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
                 </Button>

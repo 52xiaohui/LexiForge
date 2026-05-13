@@ -8,7 +8,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
-import { useNavigate, useSearchParams } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
@@ -489,12 +489,12 @@ function PreviewCard({
             </span>
             ·
             不够时可以回{" "}
-            <a
-              href="/vocab/weak"
+            <Link
+              to="/vocab/weak"
               className="underline underline-offset-4 hover:text-foreground"
             >
               薄弱词页
-            </a>{" "}
+            </Link>{" "}
             增减。
           </p>
         )}
@@ -585,12 +585,12 @@ function StatusCard({
             <p className="leading-relaxed">{errorMessage}</p>
             <p className="text-xs text-destructive/80">
               保留了参数，可以直接重试，或者先到
-              <a
-                href="/vocab/weak"
+              <Link
+                to="/vocab/weak"
                 className="mx-1 underline underline-offset-4 hover:text-destructive"
               >
                 薄弱词
-              </a>
+              </Link>
               调整勾选。
             </p>
           </div>
