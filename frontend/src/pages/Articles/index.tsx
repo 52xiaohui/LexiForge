@@ -6,6 +6,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
+import { toast } from "sonner"
 
 import {
   AlertDialog,
@@ -27,6 +28,7 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
+import type { ArticleDetail } from "@/types/api"
 
 export function Articles() {
   const queryClient = useQueryClient()
@@ -36,9 +38,33 @@ export function Articles() {
   })
 
   const deleteArticle = useMutation({
-    mutationFn: async (id: string) => mockStore.deleteArticle(id),
-    onSuccess: () => {
+    mutationFn: async (id: string): Promise<ArticleDetail> => {
+      const removed = mockStore.deleteArticle(id)
+      if (!removed) throw new Error("该文章已不存在")
+      return removed
+    },
+    // Status-card-less surface — own the feedback via sonner.
+    meta: { silent: true },
+    onSuccess: (detail) => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
+      toast("已删除文章", {
+        description: `《${detail.title}》`,
+        duration: 6000,
+        action: {
+          label: "撤销",
+          onClick: () => {
+            mockStore.restoreArticle(detail)
+            queryClient.invalidateQueries({ queryKey: ["articles"] })
+            toast.success("已撤销删除")
+          },
+        },
+      })
+    },
+    onError: (error) => {
+      toast.error("删除失败", {
+        description:
+          error instanceof Error ? error.message : "请稍后再试。",
+      })
     },
   })
 

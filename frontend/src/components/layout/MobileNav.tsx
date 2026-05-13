@@ -21,7 +21,7 @@ export function MobileNav({ open, onOpenChange }: MobileNavProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="left" className="w-72 p-0">
         <SheetTitle className="sr-only">导航菜单</SheetTitle>
-        <Sidebar />
+        <Sidebar variant="drawer" />
       </SheetContent>
     </Sheet>
   )

@@ -1,12 +1,19 @@
 import {
   Activity03Icon,
   AlertCircleIcon,
+  ArrowRight01Icon,
   Book02Icon,
   Calendar03Icon,
+  CloudDownloadIcon,
+  DashboardCircleIcon,
+  SparklesIcon,
 } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { useQuery } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
 
 import { StatCard } from "@/components/common/StatCard"
+import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import {
   formatAbsoluteTime,
@@ -50,68 +57,167 @@ export function Dashboard() {
   const target = progress?.target ?? 0
   const progressPct = target > 0 ? Math.round((practiced / target) * 100) : 0
   const lastSync = summary?.last_synced_at ?? null
+  const streakDays = progress?.streak_days ?? 0
+
+  // First-run state: no vocab yet means the backend hasn't seen a sync. We
+  // surface a dedicated onboarding card and hide the zero-filled StatCards to
+  // avoid making the app look broken.
+  const isFirstRun = summary != null && total === 0 && weak === 0
 
   return (
     <div className="space-y-10">
-      <section className="space-y-4">
-        <div className="flex items-end justify-between">
-          <p className="text-sm tracking-wide text-muted-foreground">
-            {weekdayFormatter.format(new Date())} · 下一步
-          </p>
-        </div>
-        <NextAction
-          summary={summary}
-          progress={progress}
-          unreadArticle={unreadArticle ?? null}
-        />
-      </section>
+      {isFirstRun ? (
+        <FirstRunCard />
+      ) : (
+        <>
+          <section className="space-y-4">
+            <div className="flex items-end justify-between">
+              <p className="text-sm tracking-wide text-muted-foreground">
+                {weekdayFormatter.format(new Date())} · 下一步
+              </p>
+            </div>
+            <NextAction
+              summary={summary}
+              progress={progress}
+              unreadArticle={unreadArticle ?? null}
+            />
+          </section>
 
-      <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard
-          label="总单词数"
-          value={formatCount(total)}
-          hint="同步自墨墨学习记录"
-          icon={Book02Icon}
-          tone="accent"
-        />
-        <StatCard
-          label="薄弱词数量"
-          value={formatCount(weak)}
-          hint={`占总词量 ${weakPct}%`}
-          icon={AlertCircleIcon}
-          tone="warning"
-        />
-        <StatCard
-          label="今日进度"
-          value={
-            <span>
-              {practiced}
-              <span className="text-base font-normal text-muted-foreground">
-                {" "}
-                / {target}
-              </span>
-            </span>
-          }
-          hint={`已练 ${progressPct}%`}
-          icon={Activity03Icon}
-          footer={<Progress value={progressPct} className="h-1.5" />}
-        />
-        <StatCard
-          label="最近同步"
-          value={formatRelativeTime(lastSync)}
-          hint={lastSync ? formatAbsoluteTime(lastSync) : "尚未同步"}
-          icon={Calendar03Icon}
-        />
-      </section>
+          <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatCard
+              label="总单词数"
+              value={formatCount(total)}
+              hint="同步自墨墨学习记录"
+              icon={Book02Icon}
+              tone="accent"
+              trend={summary?.total_trend}
+            />
+            <StatCard
+              label="薄弱词数量"
+              value={formatCount(weak)}
+              hint={`占总词量 ${weakPct}%`}
+              icon={AlertCircleIcon}
+              tone="warning"
+              trend={summary?.weak_trend}
+            />
+            <StatCard
+              label="今日进度"
+              value={
+                <span>
+                  {practiced}
+                  <span className="text-base font-normal text-muted-foreground">
+                    {" "}
+                    / {target}
+                  </span>
+                </span>
+              }
+              hint={
+                streakDays > 0
+                  ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
+                  : `已练 ${progressPct}%`
+              }
+              icon={Activity03Icon}
+              footer={<Progress value={progressPct} className="h-1.5" />}
+            />
+            <StatCard
+              label="最近同步"
+              value={formatRelativeTime(lastSync)}
+              hint={lastSync ? formatAbsoluteTime(lastSync) : "尚未同步"}
+              icon={Calendar03Icon}
+            />
+          </section>
 
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <RecentArticles articles={articles ?? []} />
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            <div className="lg:col-span-3">
+              <RecentArticles articles={articles ?? []} />
+            </div>
+            <div className="lg:col-span-2">
+              <NextReview words={nextReview ?? []} />
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Empty-state card shown when the user has no vocab at all. Replaces the
+ * zero-filled StatCard row so the first screen explains how to make the
+ * product useful instead of showing "0 / 0 / 0".
+ */
+function FirstRunCard() {
+  return (
+    <section className="space-y-6">
+      <div className="rounded-3xl bg-card p-8 text-center ring-1 ring-foreground/5 sm:p-12">
+        <div className="mx-auto mb-6 grid size-14 place-items-center rounded-3xl bg-foreground text-background">
+          <HugeiconsIcon icon={DashboardCircleIcon} size={22} strokeWidth={1.6} />
         </div>
-        <div className="lg:col-span-2">
-          <NextReview words={nextReview ?? []} />
+        <h2 className="font-heading text-2xl font-semibold tracking-tight">
+          欢迎使用 LexiForge
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
+          LexiForge 会从你的墨墨学习数据里挑出最薄弱的词，写一段带语境的英文短文，
+          帮你把零散的单词卡片串成可读的内容。
+        </p>
+        <div className="mx-auto mt-8 grid max-w-xl gap-3 text-left sm:grid-cols-3">
+          <StepCard
+            step="1"
+            title="同步墨墨"
+            desc="MVP 阶段通过环境变量 MAIMEMO_TOKEN 触发后端同步。"
+            icon={CloudDownloadIcon}
+          />
+          <StepCard
+            step="2"
+            title="挑选薄弱词"
+            desc="按 last_response、STICKING 和 weak_score 过滤，也可以手动勾选。"
+            icon={AlertCircleIcon}
+          />
+          <StepCard
+            step="3"
+            title="生成文章"
+            desc="选主题、难度、长度，AI 帮你写一段覆盖目标词的短文。"
+            icon={SparklesIcon}
+          />
         </div>
-      </section>
+        <div className="mt-8 flex flex-wrap justify-center gap-2">
+          <Button asChild>
+            <Link to="/vocab/weak">
+              去看薄弱词
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                data-icon="inline-end"
+                strokeWidth={1.8}
+              />
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/articles/new">直接生成一篇</Link>
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface StepCardProps {
+  step: string
+  title: string
+  desc: string
+  icon: typeof DashboardCircleIcon
+}
+
+function StepCard({ step, title, desc, icon }: StepCardProps) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-muted/30 p-4">
+      <div className="flex items-center gap-2">
+        <div className="grid size-6 place-items-center rounded-lg bg-foreground text-[10px] font-semibold text-background tabular-nums">
+          {step}
+        </div>
+        <HugeiconsIcon icon={icon} size={14} strokeWidth={1.8} />
+      </div>
+      <div className="mt-2 font-heading text-sm font-medium">{title}</div>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{desc}</p>
     </div>
   )
 }

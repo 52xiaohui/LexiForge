@@ -1,13 +1,29 @@
+import { lazy } from "react"
 import { createBrowserRouter, Navigate } from "react-router-dom"
 
 import { AppShell } from "@/components/layout/AppShell"
-import { ArticleDetail } from "@/pages/ArticleDetail"
-import { ArticleNew } from "@/pages/ArticleNew"
-import { Articles } from "@/pages/Articles"
+
+// Dashboard is the default landing page and lightweight, so keep it eager.
 import { Dashboard } from "@/pages/Dashboard"
 import { NotFound } from "@/pages/NotFound"
-import { Vocab } from "@/pages/Vocab"
-import { VocabWeak } from "@/pages/VocabWeak"
+
+// Heavier routes (ArticleDetail ~25KB, ArticleNew ~20KB, VocabWeak ~17KB) are
+// behind React.lazy so the initial bundle only carries shell + dashboard.
+const ArticleDetail = lazy(() =>
+  import("@/pages/ArticleDetail").then((m) => ({ default: m.ArticleDetail })),
+)
+const ArticleNew = lazy(() =>
+  import("@/pages/ArticleNew").then((m) => ({ default: m.ArticleNew })),
+)
+const Articles = lazy(() =>
+  import("@/pages/Articles").then((m) => ({ default: m.Articles })),
+)
+const Vocab = lazy(() =>
+  import("@/pages/Vocab").then((m) => ({ default: m.Vocab })),
+)
+const VocabWeak = lazy(() =>
+  import("@/pages/VocabWeak").then((m) => ({ default: m.VocabWeak })),
+)
 
 export interface RouteHandle {
   title: string

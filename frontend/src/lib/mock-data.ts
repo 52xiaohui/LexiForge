@@ -78,6 +78,178 @@ const WORD_SEEDS: RawWord[] = [
   { spelling: "laconic", translation: "简洁的", last_response: "VAGUE", study_count: 6, tags: [], mastery_score: 18, weak_score: 108, days_to_review: 2, example: "His laconic reply surprised the reporter." },
 ]
 
+// Synonym / etymology hints used by the ArticleDetail word popover. Only a few
+// words have backfilled entries — the rest fall through to an empty hint and
+// the popover hides the section. When the real backend ships, this will come
+// from the vocab service alongside translations.
+interface WordMeta {
+  synonyms?: string[]
+  root?: string
+}
+
+const WORD_META: Record<string, WordMeta> = {
+  ephemeral: {
+    synonyms: ["transient", "fleeting", "short-lived"],
+    root: `希腊语 ephemeros — epi (on) + hēmera (day)，字面"只活一天"`,
+  },
+  ubiquitous: {
+    synonyms: ["omnipresent", "pervasive", "widespread"],
+    root: `拉丁语 ubique = 到处`,
+  },
+  candor: {
+    synonyms: ["frankness", "honesty", "openness"],
+    root: `拉丁语 candor — "纯白、光明"，引申为坦白`,
+  },
+  vicarious: {
+    synonyms: ["indirect", "secondhand", "empathetic"],
+    root: `拉丁语 vicarius — "代替者"`,
+  },
+  perfunctory: {
+    synonyms: ["cursory", "halfhearted", "routine"],
+    root: `拉丁语 perfungi — "草草了事"`,
+  },
+  equanimity: {
+    synonyms: ["composure", "calm", "poise"],
+    root: `拉丁语 aequus (平) + animus (心)`,
+  },
+  ascertain: {
+    synonyms: ["determine", "verify", "establish"],
+    root: `中世纪法语 acertainer — 使某事 certain`,
+  },
+  quintessential: {
+    synonyms: ["archetypal", "classic", "prototypical"],
+    root: `quinta essentia — 第五元素，代表最精华的本质`,
+  },
+  gregarious: {
+    synonyms: ["sociable", "outgoing", "companionable"],
+    root: `拉丁语 grex (群)`,
+  },
+  serendipity: {
+    synonyms: ["happy accident", "fortune", "chance discovery"],
+    root: `18 世纪 Horace Walpole 造词，来源童话 Three Princes of Serendip`,
+  },
+  pragmatic: {
+    synonyms: ["practical", "realistic", "businesslike"],
+    root: `希腊语 pragma (行动)`,
+  },
+  mitigate: {
+    synonyms: ["alleviate", "ease", "soften"],
+    root: `拉丁语 mitis (温和) + agere (做)`,
+  },
+  juxtapose: {
+    synonyms: ["compare side by side", "contrast"],
+    root: `拉丁语 juxta (挨着) + ponere (放)`,
+  },
+  cognizant: {
+    synonyms: ["aware", "conscious", "mindful"],
+    root: `拉丁语 cognoscere — 知晓，与 cognition 同源`,
+  },
+  ameliorate: {
+    synonyms: ["improve", "better", "enhance"],
+    root: `拉丁语 melior (更好)`,
+  },
+  tenuous: {
+    synonyms: ["fragile", "flimsy", "slender"],
+    root: `拉丁语 tenuis (薄、细)`,
+  },
+  esoteric: {
+    synonyms: ["abstruse", "arcane", "obscure"],
+    root: `希腊语 esoterikos (内部的)，本指只传授给弟子的教义`,
+  },
+  propensity: {
+    synonyms: ["tendency", "inclination", "penchant"],
+    root: `拉丁语 propendere — 向某一方倾斜`,
+  },
+  incessant: {
+    synonyms: ["unceasing", "constant", "relentless"],
+    root: `in- (否定) + cessare (停止)`,
+  },
+  lucid: {
+    synonyms: ["clear", "coherent", "intelligible"],
+    root: `拉丁语 lucidus — 明亮的，源自 lux (光)`,
+  },
+  meticulous: {
+    synonyms: ["thorough", "painstaking", "fastidious"],
+    root: `拉丁语 meticulosus (畏惧)，引申为"谨慎到多一分都怕出错"`,
+  },
+  ostensible: {
+    synonyms: ["apparent", "supposed", "purported"],
+    root: `拉丁语 ostendere (展示)`,
+  },
+  prolific: {
+    synonyms: ["productive", "fertile", "abundant"],
+    root: `拉丁语 proles (后代) + facere (制造)`,
+  },
+  scrutinize: {
+    synonyms: ["examine", "inspect", "pore over"],
+    root: `拉丁语 scrutari — 在垃圾堆里翻找，引申为仔细查看`,
+  },
+  surreptitious: {
+    synonyms: ["stealthy", "clandestine", "furtive"],
+    root: `拉丁语 sub- (下) + rapere (抓)`,
+  },
+  tacit: {
+    synonyms: ["implicit", "unspoken", "implied"],
+    root: `拉丁语 tacere (沉默)`,
+  },
+  unfettered: {
+    synonyms: ["unrestrained", "free", "unbounded"],
+    root: `un- + fetter (脚镣)`,
+  },
+  verbose: {
+    synonyms: ["wordy", "long-winded", "prolix"],
+    root: `拉丁语 verbum (词)`,
+  },
+  whimsical: {
+    synonyms: ["playful", "fanciful", "capricious"],
+    root: `whim (突发奇想)`,
+  },
+  zealous: {
+    synonyms: ["fervent", "ardent", "passionate"],
+    root: `希腊语 zelos (热情)`,
+  },
+  benevolent: {
+    synonyms: ["kindhearted", "charitable", "magnanimous"],
+    root: `拉丁语 bene (好) + volens (愿意的)`,
+  },
+  capricious: {
+    synonyms: ["mercurial", "unpredictable", "fickle"],
+    root: `意大利语 capriccio (突发奇想)`,
+  },
+  diligent: {
+    synonyms: ["industrious", "assiduous", "hardworking"],
+    root: `拉丁语 diligere (珍视，用心做)`,
+  },
+  eloquent: {
+    synonyms: ["articulate", "fluent", "persuasive"],
+    root: `拉丁语 eloqui (说出来)`,
+  },
+  frugal: {
+    synonyms: ["thrifty", "sparing", "economical"],
+    root: `拉丁语 frugalis — "从果实中获益的"`,
+  },
+  garrulous: {
+    synonyms: ["talkative", "loquacious", "chatty"],
+    root: `拉丁语 garrire (喋喋不休)`,
+  },
+  hackneyed: {
+    synonyms: ["clichéd", "trite", "stale"],
+    root: `hackney (出租马) — 被骑得没新鲜感的表达`,
+  },
+  immutable: {
+    synonyms: ["unchangeable", "fixed", "permanent"],
+    root: `im- (否定) + mutare (改变)`,
+  },
+  judicious: {
+    synonyms: ["prudent", "sensible", "discerning"],
+    root: `拉丁语 judicium (判断)`,
+  },
+  laconic: {
+    synonyms: ["terse", "concise", "pithy"],
+    root: `Laconia 是斯巴达地区，以说话简短著称`,
+  },
+};
+
 function formatDayOffset(offset: number): string {
   const now = new Date("2026-05-12T00:00:00+08:00")
   const next = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000)
@@ -85,6 +257,7 @@ function formatDayOffset(offset: number): string {
 }
 
 function buildWord(seed: RawWord, index: number): VocabWord {
+  const meta = WORD_META[seed.spelling]
   return {
     id: `w_${String(index + 1).padStart(3, "0")}`,
     spelling: seed.spelling,
@@ -99,6 +272,9 @@ function buildWord(seed: RawWord, index: number): VocabWord {
     recently_covered_count: 0,
     mastered: false,
     ignored: false,
+    synonyms: meta?.synonyms,
+    root_note: meta?.root,
+    related_article_ids: [],
   }
 }
 
@@ -339,18 +515,27 @@ const articleDetails: ArticleDetail[] = articleSeeds.map(buildArticleDetail)
 // ---- Back-fill recently_covered_count --------------------------------------
 // Each article that "covered" a word bumps the word's recent count, for
 // sessions within ~5 days. Approximates the backend's 30-day window.
+//
+// Also registers the article id against the word so the popover can surface
+// cross-article context ("this word shows up in 2 other articles").
 
 {
   const now = Date.now()
   const windowMs = 5 * 24 * 60 * 60 * 1000
   for (const article of articleDetails) {
     const createdAt = new Date(article.created_at).getTime()
-    if (now - createdAt > windowMs) continue
+    const isRecent = now - createdAt <= windowMs
     for (const aw of article.article_words) {
       if (!aw.is_covered) continue
       const word = wordBySpelling.get(aw.spelling)
       if (!word) continue
-      word.recently_covered_count = (word.recently_covered_count ?? 0) + 1
+      if (isRecent) {
+        word.recently_covered_count = (word.recently_covered_count ?? 0) + 1
+      }
+      if (!word.related_article_ids) word.related_article_ids = []
+      if (!word.related_article_ids.includes(article.id)) {
+        word.related_article_ids.push(article.id)
+      }
     }
   }
 }
@@ -423,10 +608,12 @@ export const mockStore = {
       total: baselineTotal,
       weak: activeWeak + baselineWeak,
       last_synced_at: "2026-05-12T07:42:18+08:00",
+      total_trend: { value: 23, label: "vs 上周", tone: "positive" },
+      weak_trend: { value: -7, label: "vs 上周", tone: "positive" },
     }
   },
   todayProgress(): TodayProgress {
-    return { practiced: 12, target: 30 }
+    return { practiced: 12, target: 30, streak_days: 4 }
   },
   listWords(): VocabWord[] {
     return words.slice()
@@ -496,11 +683,22 @@ export const mockStore = {
       .sort((a, b) => b.weak_score - a.weak_score)
       .slice(0, limit)
   },
-  deleteArticle(id: string): boolean {
+  deleteArticle(id: string): ArticleDetail | null {
     const idx = articleDetails.findIndex((a) => a.id === id)
-    if (idx === -1) return false
-    articleDetails.splice(idx, 1)
-    return true
+    if (idx === -1) return null
+    const [removed] = articleDetails.splice(idx, 1)
+    return removed ?? null
+  },
+  restoreArticle(detail: ArticleDetail): void {
+    if (articleDetails.some((a) => a.id === detail.id)) return
+    // Restore roughly where it was by creation time so "按生成时间倒序" stays
+    // stable after an undo.
+    const createdAt = new Date(detail.created_at).getTime()
+    const insertAt = articleDetails.findIndex(
+      (a) => new Date(a.created_at).getTime() < createdAt,
+    )
+    if (insertAt === -1) articleDetails.push(detail)
+    else articleDetails.splice(insertAt, 0, detail)
   },
   /**
    * Build the pre-generation plan the workbench shows to the user. If

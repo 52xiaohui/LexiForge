@@ -9,6 +9,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +32,22 @@ import type {
 
 const MIN_COUNT = 15
 const MAX_COUNT = 80
+
+// Common study contexts. Clicking a chip overwrites the topic field — users
+// can still type freely, the chips are an onboarding affordance for first-time
+// visitors who don't know what to type.
+const TOPIC_CHIPS: { label: string; value: string }[] = [
+  { label: "考研", value: "postgraduate entrance exam style" },
+  { label: "四六级", value: "CET college English passage" },
+  { label: "雅思", value: "IELTS reading style" },
+  { label: "托福", value: "TOEFL reading style" },
+  { label: "商务", value: "business communication" },
+  { label: "科技", value: "emerging technology" },
+  { label: "校园生活", value: "campus life" },
+  { label: "旅行", value: "travel and culture" },
+  { label: "心理学", value: "popular psychology" },
+  { label: "哲学", value: "philosophy and ethics" },
+]
 
 const difficulties: { value: CefrLevel; label: string; hint: string }[] = [
   { value: "A2", label: "A2", hint: "初阶" },
@@ -126,9 +143,15 @@ export function ArticleNew() {
       await new Promise((r) => setTimeout(r, 900))
       return mockStore.generateArticle(input)
     },
+    // The status card renders its own contextual failure UI, so we opt out of
+    // the global toast to avoid double-reporting the same error.
+    meta: { silent: true },
     onSuccess: ({ article_id }) => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
       queryClient.invalidateQueries({ queryKey: ["vocab", "weak"] })
+      toast.success("文章生成完成", {
+        description: "已保存到历史，正在跳转到详情页。",
+      })
       navigate(`/articles/${article_id}`)
     },
   })
@@ -186,6 +209,27 @@ export function ArticleNew() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
               />
+              <div className="flex flex-wrap gap-1.5" aria-label="常用主题">
+                {TOPIC_CHIPS.map((chip) => {
+                  const active = topic.trim() === chip.value
+                  return (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      onClick={() => setTopic(chip.value)}
+                      aria-pressed={active}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+                        active
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-border/60 text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                      )}
+                    >
+                      {chip.label}
+                    </button>
+                  )
+                })}
+              </div>
               <p className="text-xs text-muted-foreground">
                 用英文或中文输入都可以。简短的名词短语最有效。
               </p>
@@ -278,13 +322,15 @@ export function ArticleNew() {
               </div>
             </div>
 
-            <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox
-                checked={simulateFailure}
-                onCheckedChange={(v) => setSimulateFailure(v === true)}
-              />
-              模拟生成失败（调试用）
-            </Label>
+            {import.meta.env.DEV && (
+              <Label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={simulateFailure}
+                  onCheckedChange={(v) => setSimulateFailure(v === true)}
+                />
+                模拟生成失败（调试用）
+              </Label>
+            )}
           </CardContent>
         </Card>
       </div>

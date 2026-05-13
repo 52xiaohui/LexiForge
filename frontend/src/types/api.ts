@@ -9,15 +9,31 @@ export type ArticleLength = "short" | "medium" | "long"
 
 export type Difficulty = CefrLevel | "B1-B2"
 
+/** Trend tag rendered by StatCards — +/- absolute value over a period. */
+export interface Trend {
+  /** Signed delta; positive is up, negative is down. */
+  value: number
+  /** Human-readable comparison window, e.g. "vs 上周". */
+  label: string
+  /** Semantic colour hint — "positive" is good news, "negative" is bad. */
+  tone?: "positive" | "negative" | "neutral"
+}
+
 export interface VocabSummary {
   total: number
   weak: number
   last_synced_at: string | null
+  /** Trend vs last week, drives the Dashboard total-words StatCard. */
+  total_trend?: Trend
+  /** Trend vs last week, drives the Dashboard weak-words StatCard. */
+  weak_trend?: Trend
 }
 
 export interface TodayProgress {
   practiced: number
   target: number
+  /** Current study streak — consecutive days hitting the daily target. */
+  streak_days?: number
 }
 
 /** Full vocabulary record for /vocab. */
@@ -39,6 +55,12 @@ export interface VocabWord {
   mastered?: boolean
   /** User flag — word manually ignored for selection, hides from the weak list. */
   ignored?: boolean
+  /** Up to ~3 synonyms surfaced in the word popover. */
+  synonyms?: string[]
+  /** Optional short etymology / word-root gloss (roots, prefix, cognates). */
+  root_note?: string
+  /** Article IDs that targeted this word — populated by mock store. */
+  related_article_ids?: string[]
 }
 
 /** Weak word — same shape as VocabWord but with guaranteed weak_score. */
@@ -86,7 +108,7 @@ export interface GenerateArticleInput {
   target_word_ids?: string[]
   /**
    * Mock-only — forces the next mutation to fail. Lets the workbench demo its
-   * failure branch in the prototype.
+   * failure branch in the prototype. Hidden behind `import.meta.env.DEV`.
    */
   simulate_failure?: boolean
 }

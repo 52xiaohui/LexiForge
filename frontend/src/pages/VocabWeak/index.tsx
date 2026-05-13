@@ -11,6 +11,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import {
@@ -73,29 +74,58 @@ export function VocabWeak() {
     queryFn: async () => mockStore.listWeakWords(),
   })
 
+  const removeFromSelection = (id: string) => {
+    setSelected((prev) => {
+      if (!prev.has(id)) return prev
+      const copy = new Set(prev)
+      copy.delete(id)
+      return copy
+    })
+  }
+
   const markMastered = useMutation({
-    mutationFn: async (id: string) => mockStore.markWordMastered(id, true),
-    onSuccess: (_, id) => {
-      setSelected((prev) => {
-        if (!prev.has(id)) return prev
-        const copy = new Set(prev)
-        copy.delete(id)
-        return copy
-      })
+    mutationFn: async (word: VocabWord) => {
+      mockStore.markWordMastered(word.id, true)
+      return word
+    },
+    meta: { silent: true },
+    onSuccess: (word) => {
+      removeFromSelection(word.id)
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
+      toast("已标记为掌握", {
+        description: `「${word.spelling}」从薄弱词中移除`,
+        duration: 6000,
+        action: {
+          label: "撤销",
+          onClick: () => {
+            mockStore.markWordMastered(word.id, false)
+            queryClient.invalidateQueries({ queryKey: ["vocab"] })
+          },
+        },
+      })
     },
   })
 
   const ignoreWord = useMutation({
-    mutationFn: async (id: string) => mockStore.toggleWordIgnored(id, true),
-    onSuccess: (_, id) => {
-      setSelected((prev) => {
-        if (!prev.has(id)) return prev
-        const copy = new Set(prev)
-        copy.delete(id)
-        return copy
-      })
+    mutationFn: async (word: VocabWord) => {
+      mockStore.toggleWordIgnored(word.id, true)
+      return word
+    },
+    meta: { silent: true },
+    onSuccess: (word) => {
+      removeFromSelection(word.id)
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
+      toast("已忽略", {
+        description: `「${word.spelling}」下次同步前不再出现`,
+        duration: 6000,
+        action: {
+          label: "撤销",
+          onClick: () => {
+            mockStore.toggleWordIgnored(word.id, false)
+            queryClient.invalidateQueries({ queryKey: ["vocab"] })
+          },
+        },
+      })
     },
   })
 
@@ -165,7 +195,7 @@ export function VocabWeak() {
   }
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-24 md:pb-20">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           共 {data.length} 个薄弱词 · 勾选想练的词，一键生成定向文章
@@ -223,7 +253,9 @@ export function VocabWeak() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/60">
+      {/* Desktop table view. Below md, switch to a card list with the same
+          semantics but more finger-friendly spacing and no horizontal scroll. */}
+      <div className="hidden overflow-hidden rounded-2xl border border-border/60 md:block">
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
@@ -284,13 +316,13 @@ export function VocabWeak() {
               </TableRow>
             ) : (
               visible.map((word) => (
-                <WordRow
+                <WordTableRow
                   key={word.id}
                   word={word}
                   selected={selected.has(word.id)}
                   onToggle={(v) => toggleOne(word.id, v)}
-                  onMaster={() => markMastered.mutate(word.id)}
-                  onIgnore={() => ignoreWord.mutate(word.id)}
+                  onMaster={() => markMastered.mutate(word)}
+                  onIgnore={() => ignoreWord.mutate(word)}
                 />
               ))
             )}
@@ -298,8 +330,33 @@ export function VocabWeak() {
         </Table>
       </div>
 
+      <div className="space-y-2 md:hidden">
+        {visible.length === 0 ? (
+          <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
+            没有匹配当前筛选的薄弱词。
+          </div>
+        ) : (
+          visible.map((word) => (
+            <WordCardRow
+              key={word.id}
+              word={word}
+              selected={selected.has(word.id)}
+              onToggle={(v) => toggleOne(word.id, v)}
+              onMaster={() => markMastered.mutate(word)}
+              onIgnore={() => ignoreWord.mutate(word)}
+            />
+          ))
+        )}
+      </div>
+
       {selectedCount > 0 && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-6">
+        <div
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4"
+          style={{
+            paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))",
+            paddingTop: "0.5rem",
+          }}
+        >
           <div
             className={cn(
               "pointer-events-auto flex w-full max-w-3xl items-center gap-3 rounded-3xl border bg-background/95 p-3 pl-5 shadow-lg ring-1 backdrop-blur supports-backdrop-filter:bg-background/70",
@@ -383,12 +440,14 @@ interface WordRowProps {
   onIgnore: () => void
 }
 
-function WordRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowProps) {
+function WordTableRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowProps) {
   const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
-      className="cursor-pointer"
+      aria-checked={selected}
+      role="row"
+      className="cursor-pointer focus-within:bg-muted/40"
       onClick={() => onToggle(!selected)}
     >
       <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
@@ -443,6 +502,100 @@ function WordRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowProps)
         />
       </TableCell>
     </TableRow>
+  )
+}
+
+/**
+ * Mobile card equivalent of WordTableRow. Targets <md screens where the 10
+ * column table would force horizontal scroll. Keeps the same selection /
+ * action semantics so behaviour doesn't diverge across breakpoints.
+ */
+function WordCardRow({
+  word,
+  selected,
+  onToggle,
+  onMaster,
+  onIgnore,
+}: WordRowProps) {
+  const recentlyCovered = word.recently_covered_count ?? 0
+  return (
+    <div
+      role="checkbox"
+      tabIndex={0}
+      aria-checked={selected}
+      aria-label={`${word.spelling}，${word.translation}`}
+      onClick={() => onToggle(!selected)}
+      onKeyDown={(e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault()
+          onToggle(!selected)
+        }
+      }}
+      className={cn(
+        "flex gap-3 rounded-2xl border bg-card p-4 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        selected
+          ? "border-foreground/30 bg-muted/50"
+          : "border-border/60",
+      )}
+    >
+      <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          aria-label={`选择 ${word.spelling}`}
+          checked={selected}
+          onCheckedChange={(v) => onToggle(v === true)}
+        />
+      </div>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <div className="font-heading text-base font-medium tracking-tight">
+            {word.spelling}
+          </div>
+          <div className="flex items-baseline gap-2 text-xs text-muted-foreground tabular-nums">
+            <span className="font-heading text-sm text-foreground">
+              {word.weak_score}
+            </span>
+            <span>weak</span>
+          </div>
+        </div>
+        <div className="truncate text-sm text-muted-foreground">
+          {word.translation}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <LastResponseBadge value={word.last_response} />
+          {word.tags.includes("STICKING") && (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+              反复忘
+            </Badge>
+          )}
+          {recentlyCovered > 0 && (
+            <Badge
+              variant="outline"
+              className="h-5 px-1.5 text-[10px] text-muted-foreground"
+            >
+              近 {recentlyCovered} 篇
+            </Badge>
+          )}
+          <span className="text-muted-foreground">
+            练习 {word.study_count} 次
+          </span>
+          {word.next_study_date && (
+            <>
+              <span aria-hidden className="text-muted-foreground">·</span>
+              <span className="text-muted-foreground">
+                下次 {formatDateShort(word.next_study_date)}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="self-start" onClick={(e) => e.stopPropagation()}>
+        <RowActions
+          spelling={word.spelling}
+          onMaster={onMaster}
+          onIgnore={onIgnore}
+        />
+      </div>
+    </div>
   )
 }
 
