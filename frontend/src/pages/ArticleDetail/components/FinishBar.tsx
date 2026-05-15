@@ -1,0 +1,206 @@
+import {
+  ArrowRight01Icon,
+  CheckmarkCircle02Icon,
+  Download04Icon,
+  GlassesIcon,
+  MoreHorizontalIcon,
+  RefreshIcon,
+  SparklesIcon,
+} from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
+import { Link } from "react-router-dom"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Button } from "@/components/ui/button"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
+
+export interface FinishBarProps {
+  coveredCount: number
+  onMasterAll: () => void
+  onRegenerate: () => void
+  isRegenerating: boolean
+  onExport: () => void
+  onPracticeWords: () => void
+}
+
+/**
+ * Hierarchy:
+ * 1. Primary CTA — `再来一篇` (the most repeatable next step in the loop).
+ * 2. Secondary — `练这篇的词` (opens the review sheet's flashcard tab).
+ * 3. Overflow menu — `导出 / 批量掌握` for power users.
+ *
+ * Why so opinionated? The legacy bar weighted four actions equally, but our
+ * usage pattern is "read article → read another article". `导出` is rare and
+ * `批量掌握` is too heavy a commitment to be top-level.
+ */
+export function FinishBar({
+  coveredCount,
+  onMasterAll,
+  onRegenerate,
+  isRegenerating,
+  onExport,
+  onPracticeWords,
+}: FinishBarProps) {
+  // The legacy bar weighted four actions equally, but our usage pattern is
+  // "read article → read another article". `导出` is rare and `批量掌握` is
+  // too heavy a commitment to be top-level.
+  return (
+    <section className="rounded-3xl border border-border/60 bg-muted/30 p-4 sm:p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="font-heading text-sm font-medium">读完了？</div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {coveredCount > 0
+              ? `命中 ${coveredCount} 个目标词。换一篇保持节奏，或先练这篇的词。`
+              : "换一篇继续练。"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={isRegenerating}
+                className={cn(isRegenerating && "opacity-80")}
+              >
+                <HugeiconsIcon
+                  icon={isRegenerating ? RefreshIcon : SparklesIcon}
+                  data-icon="inline-start"
+                  strokeWidth={1.8}
+                  className={cn(isRegenerating && "animate-spin")}
+                />
+                {isRegenerating ? "重新生成中…" : "再来一篇"}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>使用相同参数重新生成？</AlertDialogTitle>
+                <AlertDialogDescription>
+                  新文章会作为独立条目保存在历史里，当前这篇不变。
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>取消</AlertDialogCancel>
+                <AlertDialogAction onClick={onRegenerate}>
+                  重新生成
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={coveredCount === 0}
+            onClick={onPracticeWords}
+          >
+            <HugeiconsIcon
+              icon={GlassesIcon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+            />
+            练这篇的词
+          </Button>
+
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/vocab/weak">
+              薄弱词
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                data-icon="inline-end"
+                strokeWidth={1.8}
+              />
+            </Link>
+          </Button>
+
+          <OverflowMenu
+            coveredCount={coveredCount}
+            onExport={onExport}
+            onMasterAll={onMasterAll}
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface OverflowMenuProps {
+  coveredCount: number
+  onExport: () => void
+  onMasterAll: () => void
+}
+
+function OverflowMenu({
+  coveredCount,
+  onExport,
+  onMasterAll,
+}: OverflowMenuProps) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label="更多操作">
+          <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.8} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-56 p-1">
+        <button
+          type="button"
+          onClick={onExport}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-muted"
+        >
+          <HugeiconsIcon icon={Download04Icon} size={16} strokeWidth={1.8} />
+          导出 Markdown
+        </button>
+        <Separator className="my-1" />
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              disabled={coveredCount === 0}
+              className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+            >
+              <HugeiconsIcon
+                icon={CheckmarkCircle02Icon}
+                size={16}
+                strokeWidth={1.8}
+              />
+              批量标记 {coveredCount} 词已掌握
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>确认批量标记已掌握？</AlertDialogTitle>
+              <AlertDialogDescription>
+                这 {coveredCount} 个词会从薄弱词列表消失，下次生成文章也不再优先挑选。
+                标记后会弹出撤销提示，可以在几秒内回退。
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>取消</AlertDialogCancel>
+              <AlertDialogAction onClick={onMasterAll}>
+                全部标记
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </PopoverContent>
+    </Popover>
+  )
+}

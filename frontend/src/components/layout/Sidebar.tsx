@@ -7,7 +7,8 @@ import {
   SparklesIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
-import { NavLink } from "react-router-dom"
+import { Fragment } from "react"
+import { Link, NavLink } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -70,97 +71,158 @@ export function Sidebar({
   variant = "desktop",
 }: SidebarProps) {
   const isCollapsed = variant === "desktop" && collapsed
+  const showCollapseToggle = variant === "desktop" && Boolean(onCollapsedChange)
+
   return (
     <div
       className={cn(
-        "flex h-full flex-col py-6 transition-[padding] duration-200",
+        "flex h-full flex-col py-5 transition-[padding] duration-200",
         isCollapsed ? "px-2" : "px-4",
       )}
     >
-      <div
-        className={cn(
-          "mb-8 flex items-center gap-2.5",
-          isCollapsed ? "justify-center" : "px-2",
-          // Reserve room for the Sheet's default close X (absolute top-4
-          // right-4) so the brand row doesn't collide with it in the
-          // mobile drawer.
-          variant === "drawer" && "pr-10",
-        )}
-      >
-        <LexiForgeMark />
-        {!isCollapsed && (
-          <div className="min-w-0 leading-tight">
-            <div className="truncate font-heading text-base font-medium tracking-tight">
-              LexiForge
-            </div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              语境化背词工具
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Brand row — clickable home + collapse toggle pinned at the same
+          height. When expanded the toggle sits at the row's trailing edge;
+          when collapsed it stacks just below the brand mark so it stays
+          discoverable without hunting at the bottom of the rail. */}
+      <BrandRow
+        isCollapsed={isCollapsed}
+        // Reserve room for the Sheet's default close X in the mobile drawer
+        // so the brand row doesn't collide with it.
+        drawerVariant={variant === "drawer"}
+        showCollapseToggle={showCollapseToggle}
+        onCollapsedChange={onCollapsedChange}
+      />
 
-      <nav className="flex-1 space-y-6">
-        {navGroups.map((group) => (
-          <div key={group.label}>
-            {!isCollapsed && (
-              <div className="mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
+      <nav className="mt-6 flex-1">
+        {navGroups.map((group, gi) => (
+          <Fragment key={group.label}>
+            {/* Collapsed mode loses the group label, so we draw a thin rule
+                between groups to preserve the rhythmic separation the label
+                used to provide. */}
+            {isCollapsed && gi > 0 && (
+              <div
+                aria-hidden
+                className="mx-auto my-3 h-px w-6 bg-border/60"
+              />
+            )}
+            <div className={cn(!isCollapsed && gi > 0 && "mt-6")}>
+              <div
+                className={cn(
+                  "mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase transition-opacity",
+                  // Fade rather than unmount so the label appears smoothly
+                  // when the rail expands.
+                  isCollapsed
+                    ? "pointer-events-none h-0 opacity-0 mb-0"
+                    : "opacity-100",
+                )}
+              >
                 {group.label}
               </div>
-            )}
-            <ul className={cn("space-y-0.5", isCollapsed && "flex flex-col items-center")}>
-              {group.items.map((item) => (
-                <li key={item.to} className={cn(isCollapsed && "w-full")}>
-                  <NavItemLink item={item} collapsed={isCollapsed} />
-                </li>
-              ))}
-            </ul>
-          </div>
+              <ul
+                className={cn(
+                  "space-y-0.5",
+                  isCollapsed && "flex flex-col items-center",
+                )}
+              >
+                {group.items.map((item) => (
+                  <li key={item.to} className={cn(isCollapsed && "w-full")}>
+                    <NavItemLink item={item} collapsed={isCollapsed} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </Fragment>
         ))}
       </nav>
 
-      {variant === "desktop" && onCollapsedChange && (
-        <div
-          className={cn(
-            "mt-6 flex items-center",
-            isCollapsed ? "justify-center" : "justify-between px-2",
-          )}
-        >
-          {!isCollapsed && (
-            <div className="text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
-              MVP · v0.1
-            </div>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={isCollapsed ? "展开侧边栏" : "折叠侧边栏"}
-                aria-pressed={isCollapsed}
-                onClick={() => onCollapsedChange(!isCollapsed)}
-              >
-                <HugeiconsIcon
-                  icon={SidebarLeft01Icon}
-                  strokeWidth={1.8}
-                  className={cn(
-                    "transition-transform",
-                    isCollapsed && "rotate-180",
-                  )}
-                />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {isCollapsed ? "展开侧边栏" : "折叠侧边栏"}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      )}
-
-      {variant === "drawer" && (
-        <div className="mt-6 px-2 text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+      {/* Footer — always shows the version pill. The collapse control used to
+          live here; it now lives next to the brand for shorter mouse travel. */}
+      <div
+        className={cn(
+          "mt-6 transition-opacity",
+          isCollapsed && "opacity-0",
+        )}
+      >
+        <div className="px-2 text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
           MVP · v0.1
         </div>
+      </div>
+    </div>
+  )
+}
+
+interface BrandRowProps {
+  isCollapsed: boolean
+  drawerVariant: boolean
+  showCollapseToggle: boolean
+  onCollapsedChange?: (collapsed: boolean) => void
+}
+
+function BrandRow({
+  isCollapsed,
+  drawerVariant,
+  showCollapseToggle,
+  onCollapsedChange,
+}: BrandRowProps) {
+  return (
+    <div
+      className={cn(
+        "flex transition-[gap,padding] duration-200",
+        isCollapsed
+          ? "flex-col items-center gap-2"
+          : cn("items-center gap-2.5 px-2", drawerVariant && "pr-10"),
+      )}
+    >
+      <Link
+        to="/dashboard"
+        aria-label="LexiForge · 回到 Dashboard"
+        className="flex min-w-0 items-center gap-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <LexiForgeMark />
+        <span
+          className={cn(
+            "min-w-0 leading-tight transition-[opacity,max-width] duration-200",
+            isCollapsed
+              ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
+              : "max-w-[140px] opacity-100",
+          )}
+        >
+          <span className="block truncate font-heading text-base font-medium tracking-tight">
+            LexiForge
+          </span>
+          <span className="block truncate text-[11px] text-muted-foreground">
+            语境化背词工具
+          </span>
+        </span>
+      </Link>
+
+      {showCollapseToggle && onCollapsedChange && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={isCollapsed ? "展开侧边栏" : "折叠侧边栏"}
+              aria-pressed={isCollapsed}
+              onClick={() => onCollapsedChange(!isCollapsed)}
+              // Trailing-edge in expanded mode, centered-stack in collapsed.
+              className={cn(!isCollapsed && "ms-auto")}
+            >
+              <HugeiconsIcon
+                icon={SidebarLeft01Icon}
+                strokeWidth={1.8}
+                className={cn(
+                  "transition-transform",
+                  isCollapsed && "rotate-180",
+                )}
+              />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {isCollapsed ? "展开" : "折叠"}{" "}
+            <span className="opacity-60">(按 [)</span>
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   )
@@ -179,16 +241,35 @@ function NavItemLink({ item, collapsed }: NavItemLinkProps) {
       aria-label={collapsed ? item.label : undefined}
       className={({ isActive }) =>
         cn(
-          "flex items-center rounded-xl text-sm transition-colors",
+          // Keep the rail item shape stable across modes so the active
+          // marker pulses but the link box doesn't reflow on toggle.
+          "relative flex items-center rounded-xl text-sm transition-colors",
           collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+          // Active state differs by mode:
+          // - expanded: full-fill pill (legacy, high contrast)
+          // - collapsed: subtle bg + a 2px left-edge accent. Avoids
+          //   making the entire 64px rail go black on every page change.
           isActive
-            ? "bg-foreground text-background"
+            ? collapsed
+              ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-foreground"
+              : "bg-foreground text-background"
             : "text-foreground/70 hover:bg-muted hover:text-foreground",
         )
       }
     >
       <HugeiconsIcon icon={item.icon} size={16} strokeWidth={1.8} />
-      {!collapsed && <span>{item.label}</span>}
+      {/* Fade label rather than remove it from the DOM, so layout doesn't
+          flicker mid-transition. The width handle keeps the rail tight. */}
+      <span
+        className={cn(
+          "min-w-0 truncate transition-[opacity,max-width] duration-200",
+          collapsed
+            ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
+            : "max-w-[160px] opacity-100",
+        )}
+      >
+        {item.label}
+      </span>
     </NavLink>
   )
   if (!collapsed) return link

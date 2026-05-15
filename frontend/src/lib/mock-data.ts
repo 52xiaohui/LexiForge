@@ -271,6 +271,7 @@ function buildWord(seed: RawWord, index: number): VocabWord {
     example_sentence: seed.example,
     recently_covered_count: 0,
     mastered: false,
+    recognized: false,
     ignored: false,
     synonyms: meta?.synonyms,
     root_note: meta?.root,
@@ -377,7 +378,13 @@ const articleSeeds: RawArticleDetail[] = [
       "Stoicism offers a meticulous recipe for equanimity in a noisy world. Its benevolent " +
       "wisdom is lucid: you cannot control the event, only your response. When the mind " +
       "stays lucid, propensity toward panic fades and you act with purpose.",
-    targetSpellings: ["meticulous", "equanimity", "benevolent", "lucid", "propensity"],
+    targetSpellings: [
+      "meticulous",
+      "equanimity",
+      "benevolent",
+      "lucid",
+      "propensity",
+    ],
     read: true,
   },
   {
@@ -408,7 +415,13 @@ const articleSeeds: RawArticleDetail[] = [
       "A prolific writer is not necessarily a verbose one. The best are eloquent without " +
       "being hackneyed, diligent without being frugal with ideas, and judicious about when " +
       "to stop.",
-    targetSpellings: ["prolific", "verbose", "eloquent", "diligent", "judicious"],
+    targetSpellings: [
+      "prolific",
+      "verbose",
+      "eloquent",
+      "diligent",
+      "judicious",
+    ],
     read: true,
   },
   {
@@ -439,6 +452,44 @@ const articleSeeds: RawArticleDetail[] = [
       "clearly before judging.",
     targetSpellings: ["juxtapose", "cognizant", "immutable"],
     read: true,
+  },
+  {
+    id: "art_A211165",
+    title: "The Illusion of Choice: Trends vs. Individuality",
+    topic: "technology & society",
+    difficulty: "B2",
+    article_length: "long",
+    target_word_count: 4,
+    hours_ago: 20,
+    body:
+      "Social media is being used more than ever in today's society; everything can be found online, and we have made room for a trend in every corner of life. " +
+      "From makeup and fashion to organization and meals, there is a trend for everything. " +
+      "How are we supposed to keep our individuality in this time of commonality? " +
+      "Do I actually want to hit purchase, or am I trying to replicate what I saw online?\n\n" +
+      "Let's start with the trends themselves; they don't always have to be perceived as negative. " +
+      "Many trends can help you figure out what you do and don't like. " +
+      "Types of clothing, makeup looks, aesthetics, foods, shows, etc., can help you figure out who you truly are. " +
+      "You can see a trend and realize 'huh, that may not be for me' or 'that's exactly what I've been looking for,' but it changes from person to person.\n\n" +
+      "However, more often than not, they don't promote individualism; instead, they promote the opposite. " +
+      "The French philosopher René Girard developed the Mimetic Desire, 'the theory that human desire is not autonomous but imitated from others.' " +
+      "We are not brought forth into this world knowing our likes and dislikes; it's something that is taught to us. " +
+      "Whether that's through the people we surround ourselves with, the films we watch, the trends we notice, and the home we grew up in, these factors influence the person that we become. " +
+      "The Mimetic Desire is directly correlated with trends; we have this innate desire to possess what belongs to others. " +
+      "We notice others have something we may want, but do we actually desire it, or are we simply trying to follow along? " +
+      "You see, a purse is trending, and now you're on the internet searching for the exact one, but why? " +
+      "You never wanted this purse before, so why is it something that you have to have now?\n\n" +
+      "We don't need to conform to trends, but it's difficult to embark on a path that may be lonelier than another one. " +
+      "All of your friends enjoy a certain genre of music, and maybe you don't, but saying so makes you different, and being different might make you uncomfortable. " +
+      "However, isn't the fact that we all have differences what unites us? " +
+      "Isn't the beauty of society the diversity that sits among us all, from our upbringings to our hobbies? " +
+      "Don't be afraid to stand out a little bit; it might make someone else comfortable to stand out as well. " +
+      "It is important to separate yourself from a trend and wonder if it is truly what sits with you. " +
+      "Do I actually believe this, or am I forcing myself to do so because everyone seems to share that opinion? " +
+      "Separate your actual desires from what you feel forced to like. " +
+      "It's okay to appreciate trends without adopting them. " +
+      "Finding yourself is difficult in a time where everyone is chasing a version of each other, but instead, chase the person who sits at your heart.",
+    targetSpellings: ["individuality", "autonomous", "innate", "conform"],
+    read: false,
   },
 ]
 
@@ -538,6 +589,31 @@ const articleDetails: ArticleDetail[] = articleSeeds.map(buildArticleDetail)
       }
     }
   }
+}
+
+// ---- Per-article reading state ------------------------------------------------
+// Lives in-memory next to the seeds so it disappears with a page refresh —
+// matches the rest of the prototype, no localStorage. When the real backend
+// arrives this becomes a `reading_state` table keyed by (user_id, article_id).
+
+export type ParagraphFeedback = "ok" | "stuck"
+
+interface ArticleReadingState {
+  /** paragraph index → user self-assessment */
+  paragraphFeedback: Record<number, ParagraphFeedback>
+  /** Furthest paragraph the reader has reached, used for "resume here". */
+  lastParagraph: number | null
+}
+
+const articleReadingState = new Map<string, ArticleReadingState>()
+
+function ensureReadingState(articleId: string): ArticleReadingState {
+  let state = articleReadingState.get(articleId)
+  if (!state) {
+    state = { paragraphFeedback: {}, lastParagraph: null }
+    articleReadingState.set(articleId, state)
+  }
+  return state
 }
 
 // ---- Accessors ----------------------------------------------------------------
@@ -667,6 +743,18 @@ export const mockStore = {
     if (!word) return false
     word.mastered = mastered
     if (mastered) word.ignored = false
+    if (mastered) word.recognized = true
+    return true
+  },
+  /**
+   * Toggle the lighter-weight "I recognised this in context" flag. Distinct
+   * from mastered: lets the reader signal partial confidence without removing
+   * the word from the weak pool.
+   */
+  markWordRecognized(id: string, recognized: boolean): boolean {
+    const word = words.find((w) => w.id === id)
+    if (!word) return false
+    word.recognized = recognized
     return true
   },
   toggleWordIgnored(id: string, ignored: boolean): boolean {
@@ -786,5 +874,47 @@ export const mockStore = {
       word.recently_covered_count = (word.recently_covered_count ?? 0) + 1
     }
     return { article_id: id }
+  },
+  /**
+   * Read the per-paragraph self-assessment map for an article. Returns an
+   * empty object if the user hasn't tagged anything yet. Caller treats it as
+   * read-only — mutations go through `setParagraphFeedback`.
+   */
+  getParagraphFeedback(articleId: string): Record<number, ParagraphFeedback> {
+    return { ...ensureReadingState(articleId).paragraphFeedback }
+  },
+  /**
+   * Toggle / set the per-paragraph self-assessment. Passing `null` clears the
+   * entry, otherwise the value is recorded verbatim.
+   */
+  setParagraphFeedback(
+    articleId: string,
+    paragraphIdx: number,
+    value: ParagraphFeedback | null,
+  ): void {
+    const state = ensureReadingState(articleId)
+    if (value === null) {
+      delete state.paragraphFeedback[paragraphIdx]
+    } else {
+      state.paragraphFeedback[paragraphIdx] = value
+    }
+  },
+  /**
+   * Return the furthest paragraph the reader has reached, used by the auto
+   * resume jump. `null` means the user hasn't progressed past paragraph 0.
+   */
+  getLastParagraph(articleId: string): number | null {
+    return ensureReadingState(articleId).lastParagraph
+  },
+  /**
+   * Record the paragraph the reader has scrolled to, but only ratchet forward
+   * — never overwrite a higher anchor with a lower one. This avoids losing
+   * the bookmark when the user scrolls back up to re-read.
+   */
+  setLastParagraph(articleId: string, paragraphIdx: number): void {
+    const state = ensureReadingState(articleId)
+    if (state.lastParagraph === null || paragraphIdx > state.lastParagraph) {
+      state.lastParagraph = paragraphIdx
+    }
   },
 }

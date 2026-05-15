@@ -32,6 +32,28 @@ export function AppShell() {
     }
   }, [collapsed])
 
+  // Keyboard shortcut: `[` toggles the sidebar without reaching for the
+  // mouse. We deliberately ignore the event when focus is in an editable
+  // surface (so typing `[` in inputs / textareas stays inert) and skip
+  // modifier combos so OS shortcuts like ⌘[ for browser-back keep working.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.repeat) return
+      if (e.key !== "[") return
+      const target = e.target
+      if (target instanceof HTMLElement) {
+        if (target.isContentEditable) return
+        if (target.closest("input, textarea, select, [contenteditable='true']"))
+          return
+      }
+      e.preventDefault()
+      setCollapsed((c) => !c)
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
+
   return (
     <div className="min-h-svh bg-background">
       {/* Keyboard / screen-reader escape to the main content. Visually hidden

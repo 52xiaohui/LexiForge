@@ -53,6 +53,12 @@ export interface VocabWord {
   recently_covered_count?: number
   /** User flag — word manually marked as mastered, hides from the weak list. */
   mastered?: boolean
+  /**
+   * Lighter-weight flag than `mastered`: the user signalled "I recognised this
+   * inside an article" without committing to full mastery. Lets us show a
+   * gentler highlight in the reader and feeds back into weak-score tuning.
+   */
+  recognized?: boolean
   /** User flag — word manually ignored for selection, hides from the weak list. */
   ignored?: boolean
   /** Up to ~3 synonyms surfaced in the word popover. */

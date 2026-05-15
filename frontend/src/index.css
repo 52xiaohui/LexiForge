@@ -78,6 +78,12 @@
 @theme inline {
     --font-sans: 'Figtree Variable', sans-serif;
     --font-heading: 'Geist Variable', sans-serif;
+    /* Reading-surface body font for long-form articles. Uses the platform
+       serif stack so we don't pay another fontsource bundle hit just for
+       the reader. */
+    --font-reading-serif: ui-serif, Georgia, 'Iowan Old Style', 'Apple Garamond',
+        'Source Serif 4', 'Source Serif Pro', 'Noto Serif SC', 'Songti SC',
+        'Times New Roman', serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -131,4 +137,48 @@
   html {
     @apply font-sans;
     }
+}
+
+
+/* ----------------------------------------------------------------------------
+ * Reading surface
+ * --------------------------------------------------------------------------*/
+
+/* Sepia tint applied to the article reading surface only — tinted via local
+ * custom props so the global theme tokens are untouched. Toggled by
+ * `data-tone="sepia"` on the `[data-slot="article-body"]` wrapper. */
+[data-slot="article-body"][data-tone="sepia"] {
+    --reading-bg: oklch(0.965 0.025 84);
+    --reading-fg: oklch(0.288 0.025 60);
+    --reading-muted: oklch(0.45 0.04 60);
+    background-color: var(--reading-bg);
+    color: var(--reading-fg);
+}
+[data-slot="article-body"][data-tone="sepia"] [data-slot="paragraph-feedback"] {
+    color: var(--reading-muted);
+}
+.dark [data-slot="article-body"][data-tone="sepia"] {
+    --reading-bg: oklch(0.245 0.018 60);
+    --reading-fg: oklch(0.92 0.01 80);
+    --reading-muted: oklch(0.7 0.02 70);
+}
+
+/* Hover-reveal: pulse same-paragraph target marks when the reader hovers any
+ * one of them, so the eye can sweep the whole sentence's targets at once. */
+[data-slot="paragraph"]:has([data-slot="target-mark"]:hover)
+    [data-slot="target-mark"]:not(:hover) {
+    box-shadow: 0 0 0 1px var(--color-foreground);
+    box-shadow: 0 0 0 1px color-mix(in oklch, currentColor 28%, transparent);
+}
+
+/* Karaoke: sentence currently being spoken by TTS. */
+[data-slot="sentence"][data-speaking="true"] {
+    background-image: linear-gradient(
+        to right,
+        color-mix(in oklch, var(--color-foreground) 12%, transparent),
+        color-mix(in oklch, var(--color-foreground) 4%, transparent) 90%
+    );
+    border-radius: 0.4rem;
+    box-shadow: -0.2rem 0 0 0 color-mix(in oklch, var(--color-foreground) 40%, transparent);
+    padding-left: 0.2rem;
 }
