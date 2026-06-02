@@ -12,9 +12,9 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import { SectionPanel } from "@/components/common/SectionPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -190,17 +190,19 @@ export function ArticleNew() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-5">
+    <div className="pb-28 lg:pb-0">
+      <div className="grid gap-6 lg:grid-cols-5">
       {/* Left column — parameters */}
       <div className="space-y-6 lg:col-span-3">
-        <Card>
-          <CardHeader className="border-b">
-            <CardTitle className="flex items-center gap-2">
+        <SectionPanel
+          title={
+            <>
               <HugeiconsIcon icon={SparklesIcon} size={16} strokeWidth={1.8} />
               文章参数
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6 pt-6">
+            </>
+          }
+        >
+          <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="topic">主题</Label>
               <Input
@@ -331,12 +333,12 @@ export function ArticleNew() {
                 模拟生成失败（调试用）
               </Label>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </SectionPanel>
       </div>
 
       {/* Right column — preview + status */}
-      <div className="space-y-4 lg:col-span-2">
+      <div className="space-y-6 lg:col-span-2">
         <PreviewCard
           words={preview?.words ?? []}
           countsByResponse={preview?.counts_by_response}
@@ -358,6 +360,57 @@ export function ArticleNew() {
           onReset={() => generate.reset()}
           targetCount={count}
         />
+      </div>
+      </div>
+
+      {/* Mobile sticky action bar — keeps the primary CTA reachable */}
+      <div
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 lg:hidden"
+        style={{
+          paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+          paddingTop: "0.5rem",
+        }}
+      >
+        <div
+          className={cn(
+            "pointer-events-auto mx-auto flex max-w-3xl items-center gap-3 rounded-3xl border bg-background/95 p-3 pl-5 shadow-lg ring-1 backdrop-blur supports-backdrop-filter:bg-background/70",
+            firstError
+              ? "border-destructive/40 ring-destructive/20"
+              : "border-border/60 ring-foreground/5",
+          )}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
+            <HugeiconsIcon
+              icon={
+                generate.isPending
+                  ? Loading02Icon
+                  : firstError
+                    ? AlertCircleIcon
+                    : SparklesIcon
+              }
+              size={18}
+              strokeWidth={1.8}
+              className={cn(
+                generate.isPending && "animate-spin",
+                firstError && "text-destructive",
+              )}
+            />
+            <span className={cn("truncate", firstError && "text-destructive")}>
+              {firstError ?? (generate.isPending ? "正在生成…" : "准备就绪")}
+            </span>
+          </div>
+          {generate.isError && (
+            <Button variant="ghost" size="sm" onClick={() => generate.reset()}>
+              取消
+            </Button>
+          )}
+          <GenerateButton
+            isPending={generate.isPending}
+            isError={generate.isError}
+            canSubmit={canSubmit}
+            onSubmit={handleSubmit}
+          />
+        </div>
       </div>
     </div>
   )
@@ -390,14 +443,15 @@ function PreviewCard({
 }: PreviewCardProps) {
   const planSize = words.length
   return (
-    <Card size="sm">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
+    <SectionPanel
+      title={
+        <>
           <HugeiconsIcon icon={Target02Icon} size={16} strokeWidth={1.8} />
           覆盖预览
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-4">
+        </>
+      }
+    >
+      <div className="space-y-3">
         <div className="flex items-baseline justify-between gap-2">
           <div className="text-xs tracking-wider text-muted-foreground uppercase">
             计划覆盖
@@ -498,8 +552,8 @@ function PreviewCard({
             增减。
           </p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SectionPanel>
   )
 }
 
@@ -535,10 +589,9 @@ function StatusCard({
     : null
 
   return (
-    <Card size="sm">
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
-          {isPending ? (
+    <SectionPanel
+      title={
+        isPending ? (
             <>
               <HugeiconsIcon
                 icon={Loading02Icon}
@@ -567,10 +620,10 @@ function StatusCard({
               />
               准备就绪
             </>
-          )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3 pt-4 text-sm">
+          )
+        }
+      >
+      <div className="space-y-3 text-sm">
         {isPending && (
           <p className="leading-relaxed text-muted-foreground">
             正在调用模型合成约 {targetCount} 个目标词的英文短文，通常需要 15–30 秒。
@@ -614,50 +667,80 @@ function StatusCard({
           </p>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
+        <div className="hidden items-center gap-2 pt-1 lg:flex">
           {errorMessage && (
             <Button variant="outline" size="sm" onClick={onReset}>
               取消
             </Button>
           )}
-          <Button
-            size="default"
-            onClick={onSubmit}
-            disabled={!canSubmit}
+          <GenerateButton
+            isPending={isPending}
+            isError={isError}
+            canSubmit={canSubmit}
+            onSubmit={onSubmit}
             className="ms-auto"
-          >
-            {isPending ? (
-              <>
-                <HugeiconsIcon
-                  icon={Loading02Icon}
-                  data-icon="inline-start"
-                  strokeWidth={1.8}
-                  className="animate-spin"
-                />
-                生成中…
-              </>
-            ) : errorMessage ? (
-              <>
-                <HugeiconsIcon
-                  icon={SparklesIcon}
-                  data-icon="inline-start"
-                  strokeWidth={1.8}
-                />
-                重试
-              </>
-            ) : (
-              <>
-                <HugeiconsIcon
-                  icon={SparklesIcon}
-                  data-icon="inline-start"
-                  strokeWidth={1.8}
-                />
-                生成文章
-              </>
-            )}
-          </Button>
+          />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </SectionPanel>
+  )
+}
+
+// --------------------------------------------------------------------------------
+// Generate CTA — shared by the desktop status card and the mobile sticky bar.
+// --------------------------------------------------------------------------------
+
+interface GenerateButtonProps {
+  isPending: boolean
+  isError: boolean
+  canSubmit: boolean
+  onSubmit: () => void
+  className?: string
+}
+
+function GenerateButton({
+  isPending,
+  isError,
+  canSubmit,
+  onSubmit,
+  className,
+}: GenerateButtonProps) {
+  return (
+    <Button
+      size="default"
+      onClick={onSubmit}
+      disabled={!canSubmit}
+      className={className}
+    >
+      {isPending ? (
+        <>
+          <HugeiconsIcon
+            icon={Loading02Icon}
+            data-icon="inline-start"
+            strokeWidth={1.8}
+            className="animate-spin"
+          />
+          生成中…
+        </>
+      ) : isError ? (
+        <>
+          <HugeiconsIcon
+            icon={SparklesIcon}
+            data-icon="inline-start"
+            strokeWidth={1.8}
+          />
+          重试
+        </>
+      ) : (
+        <>
+          <HugeiconsIcon
+            icon={SparklesIcon}
+            data-icon="inline-start"
+            strokeWidth={1.8}
+          />
+          生成文章
+        </>
+      )}
+    </Button>
   )
 }
