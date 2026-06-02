@@ -165,7 +165,7 @@ function SyncStatusButton({ lastSyncedAt }: SyncStatusButtonProps) {
             "aspect-square w-8 !px-0 sm:aspect-auto sm:w-auto sm:!px-3 sm:has-data-[icon=inline-start]:!pl-2",
             "tabular-nums",
             status === "stale" &&
-              "border-destructive/40 text-destructive hover:text-destructive",
+              "border-amber-500/40 text-amber-600 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-400",
             status === "fresh" && "text-muted-foreground",
           )}
         >

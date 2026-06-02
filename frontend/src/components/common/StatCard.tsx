@@ -11,7 +11,7 @@ export type StatCardTone = "default" | "accent" | "warning"
 
 const toneStyles: Record<StatCardTone, { icon: string; ring: string }> = {
   default: { icon: "bg-muted text-foreground", ring: "ring-foreground/10" },
-  accent: { icon: "bg-foreground text-background", ring: "ring-foreground/15" },
+  accent: { icon: "bg-primary text-primary-foreground", ring: "ring-primary/20" },
   warning: {
     icon: "bg-destructive/10 text-destructive",
     ring: "ring-destructive/20",

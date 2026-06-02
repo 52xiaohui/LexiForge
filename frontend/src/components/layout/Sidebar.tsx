@@ -251,8 +251,8 @@ function NavItemLink({ item, collapsed }: NavItemLinkProps) {
           //   making the entire 64px rail go black on every page change.
           isActive
             ? collapsed
-              ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-foreground"
-              : "bg-foreground text-background"
+              ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-primary"
+              : "bg-primary text-primary-foreground"
             : "text-foreground/70 hover:bg-muted hover:text-foreground",
         )
       }
@@ -282,7 +282,7 @@ function NavItemLink({ item, collapsed }: NavItemLinkProps) {
 }
 
 /**
- * LexiForge wordmark tile — a flat black rounded square with a custom "Lx"
+ * LexiForge wordmark tile — a brand-indigo rounded square with a custom "Lx"
  * monogram in Geist Variable, leaning into the typographic brand rather than
  * a generic book icon.
  */
@@ -290,7 +290,7 @@ function LexiForgeMark() {
   return (
     <div
       aria-hidden="true"
-      className="grid size-9 shrink-0 place-items-center rounded-2xl bg-foreground text-background"
+      className="grid size-9 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground"
     >
       <span
         className="font-heading text-[14px] font-semibold leading-none tracking-tight"
