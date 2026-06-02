@@ -5,15 +5,9 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Link } from "react-router-dom"
 
+import { SectionPanel } from "@/components/common/SectionPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   formatCoverage,
   formatDifficulty,
@@ -27,32 +21,32 @@ export interface RecentArticlesProps {
 
 export function RecentArticles({ articles }: RecentArticlesProps) {
   return (
-    <Card>
-      <CardHeader className="border-b">
-        <CardTitle className="flex items-center gap-2">
+    <SectionPanel
+      title={
+        <>
           <HugeiconsIcon icon={Notebook02Icon} size={16} strokeWidth={1.8} />
           最近生成的文章
-        </CardTitle>
-        <CardAction>
-          <Button asChild variant="ghost" size="sm">
-            <Link to="/articles">
-              全部
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                data-icon="inline-end"
-                strokeWidth={1.8}
-              />
-            </Link>
-          </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        {articles.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            还没有文章。点上方"生成新文章"开始第一篇。
-          </p>
-        ) : (
-          <ul className="divide-y divide-border/60">
+        </>
+      }
+      action={
+        <Button asChild variant="ghost" size="sm">
+          <Link to="/articles">
+            全部
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              data-icon="inline-end"
+              strokeWidth={1.8}
+            />
+          </Link>
+        </Button>
+      }
+    >
+      {articles.length === 0 ? (
+        <p className="py-12 text-center text-sm text-muted-foreground">
+          还没有文章。点上方"生成新文章"开始第一篇。
+        </p>
+      ) : (
+        <ul className="divide-y divide-border/60">
             {articles.map((article) => (
               <li key={article.id}>
                 <Link
@@ -80,9 +74,8 @@ export function RecentArticles({ articles }: RecentArticlesProps) {
                 </Link>
               </li>
             ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
+        </ul>
+      )}
+    </SectionPanel>
   )
 }
