@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import { WeakScoreMeter } from "@/components/common/WeakScoreMeter"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -466,8 +467,8 @@ function WordTableRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowP
       <TableCell>
         <LastResponseBadge value={word.last_response} />
       </TableCell>
-      <TableCell className="font-heading text-sm tabular-nums">
-        {word.weak_score}
+      <TableCell>
+        <WeakScoreMeter score={word.weak_score} />
       </TableCell>
       <TableCell className="text-sm tabular-nums text-muted-foreground">
         {word.study_count}
@@ -555,10 +556,8 @@ function WordCardRow({
           <div className="font-heading text-base font-medium tracking-tight">
             {word.spelling}
           </div>
-          <div className="flex items-baseline gap-2 text-xs text-muted-foreground tabular-nums">
-            <span className="font-heading text-sm text-foreground">
-              {word.weak_score}
-            </span>
+          <div className="flex items-baseline gap-1.5 text-xs text-muted-foreground tabular-nums">
+            <WeakScoreMeter score={word.weak_score} variant="compact" />
             <span>weak</span>
           </div>
         </div>
