@@ -89,7 +89,7 @@ export function AppShell() {
             className="flex-1 outline-none"
           >
             <div
-              className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10 lg:py-12"
+              className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12"
               // Honour the iOS safe-area so fixed bars (VocabWeak floating bar
               // etc.) have room on notched devices.
               style={{ paddingBottom: "max(3rem, env(safe-area-inset-bottom))" }}
