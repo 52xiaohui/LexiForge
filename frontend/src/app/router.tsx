@@ -1,3 +1,7 @@
+/* This module intentionally exports the router and route-handle types
+   alongside lazy() route components, which the dev-only react-refresh rule
+   flags. Mirrors the disable already used in components/ui/button.tsx. */
+/* eslint-disable react-refresh/only-export-components */
 import { lazy } from "react"
 import { createBrowserRouter, Navigate } from "react-router-dom"
 
