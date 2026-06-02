@@ -242,13 +242,17 @@ export function Vocab() {
         </Table>
       </div>
 
-      <div className="space-y-2 md:hidden">
+      <div className="md:hidden">
         {pageItems.length === 0 ? (
           <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
             没有匹配的单词。
           </div>
         ) : (
-          pageItems.map((word) => <WordCard key={word.id} word={word} />)
+          <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
+            {pageItems.map((word) => (
+              <WordCard key={word.id} word={word} />
+            ))}
+          </div>
         )}
       </div>
 
@@ -288,7 +292,7 @@ export function Vocab() {
  */
 function WordCard({ word }: { word: VocabWord }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-4">
+    <div className="bg-card p-4">
       <div className="flex items-baseline justify-between gap-2">
         <div className="font-heading text-base font-medium tracking-tight">
           {word.spelling}

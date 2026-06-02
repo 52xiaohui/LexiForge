@@ -331,22 +331,24 @@ export function VocabWeak() {
         </Table>
       </div>
 
-      <div className="space-y-2 md:hidden">
+      <div className="md:hidden">
         {visible.length === 0 ? (
           <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
             没有匹配当前筛选的薄弱词。
           </div>
         ) : (
-          visible.map((word) => (
-            <WordCardRow
-              key={word.id}
-              word={word}
-              selected={selected.has(word.id)}
-              onToggle={(v) => toggleOne(word.id, v)}
-              onMaster={() => markMastered.mutate(word)}
-              onIgnore={() => ignoreWord.mutate(word)}
-            />
-          ))
+          <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
+            {visible.map((word) => (
+              <WordCardRow
+                key={word.id}
+                word={word}
+                selected={selected.has(word.id)}
+                onToggle={(v) => toggleOne(word.id, v)}
+                onMaster={() => markMastered.mutate(word)}
+                onIgnore={() => ignoreWord.mutate(word)}
+              />
+            ))}
+          </div>
         )}
       </div>
 
@@ -538,10 +540,8 @@ function WordCardRow({
         }
       }}
       className={cn(
-        "flex gap-3 rounded-2xl border bg-card p-4 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        selected
-          ? "border-foreground/30 bg-muted/50"
-          : "border-border/60",
+        "flex gap-3 p-4 transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:-outline-offset-2",
+        selected ? "bg-muted/60" : "bg-card hover:bg-muted/30",
       )}
     >
       <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
