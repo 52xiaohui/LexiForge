@@ -114,11 +114,11 @@ export function Articles() {
         </Button>
       </div>
 
-      <ul className="space-y-3">
+      <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60 sm:space-y-3 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:border-0">
         {data.map((article) => (
           <li
             key={article.id}
-            className="group flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 ring-1 ring-foreground/5 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4"
+            className="group flex flex-col gap-3 bg-card p-4 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:gap-4 sm:rounded-2xl sm:border sm:border-border/60 sm:ring-1 sm:ring-foreground/5"
           >
             <Link
               to={`/articles/${article.id}`}
