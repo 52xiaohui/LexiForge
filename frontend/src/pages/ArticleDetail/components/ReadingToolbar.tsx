@@ -25,6 +25,11 @@ import { cn } from "@/lib/utils"
 
 import { ReadingPrefsPopover } from "./ReadingPrefsPopover"
 
+/** Thin vertical rule separating functional clusters in the toolbar. */
+function ToolbarDivider() {
+  return <span aria-hidden className="mx-1 h-5 w-px bg-border/70" />
+}
+
 export interface ReadingToolbarProps {
   // Reading prefs (all forwarded to the popover)
   fontSize: ReadingFontSize
@@ -62,10 +67,10 @@ export interface ReadingToolbarProps {
 }
 
 /**
- * The desktop toolbar that lives just below the article header. Two visual
- * groups: TTS controls on the left, target-word navigation + drawer triggers
- * on the right. Reading prefs live behind a single popover so the bar stays
- * a single line.
+ * The desktop toolbar that lives just below the article header. Controls are
+ * split into labelled clusters separated by thin rules: playback (TTS) and
+ * display prefs on the left, target-word navigation and drawer triggers on the
+ * right. Reading prefs live behind a single popover so the bar stays one line.
  */
 export function ReadingToolbar(props: ReadingToolbarProps) {
   const {
@@ -92,7 +97,11 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
   return (
     <div className="hidden flex-wrap items-center gap-1 rounded-2xl border border-border/60 bg-muted/30 p-1.5 sm:flex">
       {speechSupported && (
-        <div className="flex items-center gap-0.5">
+        <div
+          className="flex items-center gap-0.5"
+          role="group"
+          aria-label="朗读控制"
+        >
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -158,11 +167,12 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
         </div>
       )}
 
+      {speechSupported && <ToolbarDivider />}
       <ReadingPrefsPopover {...props} />
 
       <div className="ms-auto flex items-center gap-1">
         {hasTargets && (
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" role="group" aria-label="目标词导航">
             <span className="text-xs tabular-nums text-muted-foreground">
               目标词 {targetIndex + 1}/{targetCount}
             </span>
@@ -198,32 +208,35 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
             </Tooltip>
           </div>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="打开词表抽屉"
-          onClick={onOpenWordList}
-        >
-          <HugeiconsIcon
-            icon={BookmarkAdd02Icon}
-            data-icon="inline-start"
-            strokeWidth={1.8}
-          />
-          <span className="hidden md:inline">词表</span>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-label="回顾这篇"
-          onClick={onOpenReview}
-        >
-          <HugeiconsIcon
-            icon={GlassesIcon}
-            data-icon="inline-start"
-            strokeWidth={1.8}
-          />
-          <span className="hidden md:inline">回顾</span>
-        </Button>
+        {hasTargets && <ToolbarDivider />}
+        <div className="flex items-center gap-1" role="group" aria-label="词表与回顾">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="打开词表抽屉"
+            onClick={onOpenWordList}
+          >
+            <HugeiconsIcon
+              icon={BookmarkAdd02Icon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+            />
+            <span className="hidden md:inline">词表</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="回顾这篇"
+            onClick={onOpenReview}
+          >
+            <HugeiconsIcon
+              icon={GlassesIcon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+            />
+            <span className="hidden md:inline">回顾</span>
+          </Button>
+        </div>
       </div>
     </div>
   )

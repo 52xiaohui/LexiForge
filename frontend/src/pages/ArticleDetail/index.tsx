@@ -35,7 +35,6 @@ import {
 } from "./components/ReadingToolbar"
 import { ReadingProgress } from "./components/ReadingProgress"
 import { ReviewSheet } from "./components/ReviewSheet"
-import { TargetDots } from "./components/TargetDots"
 import {
   locatedTargets,
   paragraphDomId,
@@ -515,18 +514,6 @@ export function ArticleDetail() {
           />
         </div>
       </div>
-
-      <TargetDots
-        articleId={article.id}
-        targets={targets}
-        wordIndex={wordIndex}
-        activeIdx={targetIdx}
-        onJump={(idx) => {
-          setTargetIdx(idx)
-          const t = targets[idx]
-          if (t) scrollToTarget(t.word_id)
-        }}
-      />
 
       <CoverageDrawer
         open={wordListOpen}
