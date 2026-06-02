@@ -6,6 +6,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { Link } from "react-router-dom"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import { WeakScoreMeter } from "@/components/common/WeakScoreMeter"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -67,10 +68,8 @@ export function NextReview({ words }: NextReviewProps) {
                     </span>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className="font-heading text-sm font-medium tabular-nums">
-                    {word.weak_score}
-                  </div>
+                <div className="flex shrink-0 flex-col items-end">
+                  <WeakScoreMeter score={word.weak_score} variant="compact" />
                   <div className="text-[10px] tracking-wider text-muted-foreground uppercase">
                     weak
                   </div>

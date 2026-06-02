@@ -491,6 +491,87 @@ const articleSeeds: RawArticleDetail[] = [
     targetSpellings: ["individuality", "autonomous", "innate", "conform"],
     read: false,
   },
+  {
+    id: "art_long_habit",
+    title: "The Quiet Architecture of Habit",
+    topic: "personal growth",
+    difficulty: "C1",
+    article_length: "long",
+    target_word_count: 8,
+    hours_ago: 3,
+    body:
+      "Habits are built less by grand resolutions than by the meticulous repetition of " +
+      "small acts. We like to imagine that change arrives in a single decisive moment, but " +
+      "the truth is more incessant and quiet: a thousand tiny choices, each one nudging us " +
+      "toward the person we are slowly becoming.\n\n" +
+      "Every person carries a propensity toward comfort, and comfort is rarely the same as " +
+      "growth. To mitigate that pull, it helps to make the desired behaviour the easy one — " +
+      "lay out the running shoes the night before, keep the book on the pillow. The " +
+      "environment quietly does the work that willpower alone cannot.\n\n" +
+      "A pragmatic approach treats motivation as unreliable. Motivation flickers; systems " +
+      "endure. When the scaffolding of a routine is tenuous, the smallest disruption — a " +
+      "late night, a missed alarm — can topple the whole structure. The remedy is not more " +
+      "discipline but better design.\n\n" +
+      "There is also an emotional dimension. Setbacks are inevitable, and the reader who " +
+      "can meet them with equanimity will outlast the one who treats every lapse as proof " +
+      "of failure. A single skipped day does not undo a month of effort; it is merely " +
+      "data.\n\n" +
+      "So begin small, and be patient. You cannot ameliorate years of habit in a weekend, " +
+      "but you can change the next hour. The architecture of a better life is quiet, " +
+      "unglamorous, and entirely within reach.",
+    targetSpellings: [
+      "meticulous",
+      "incessant",
+      "propensity",
+      "mitigate",
+      "pragmatic",
+      "tenuous",
+      "equanimity",
+      "ameliorate",
+    ],
+    read: false,
+  },
+  {
+    id: "art_long_cities",
+    title: "When Cities Learn to Listen",
+    topic: "technology & society",
+    difficulty: "C1",
+    article_length: "long",
+    target_word_count: 8,
+    hours_ago: 10,
+    body:
+      "Sensors are now ubiquitous in the modern city. They count footsteps on the " +
+      "pavement, measure the air above the intersections, and listen — politely, we are " +
+      "told — for the sound of breaking glass. Most of this happens quietly, in a register " +
+      "the average citizen never notices.\n\n" +
+      "The promise is benevolent: cleaner air, shorter commutes, faster help when " +
+      "something goes wrong. Few would argue against safer streets. Yet the same " +
+      "instruments that protect can also surveil, and the line between the two is thinner " +
+      "than the brochures suggest.\n\n" +
+      "When data collection becomes surreptitious, consent quietly evaporates. We rarely " +
+      "scrutinize the terms we accept; we tap 'agree' and move on. A tacit bargain forms " +
+      "between the people who build these systems and the people who live inside them, and " +
+      "few of us are fully cognizant of what we have traded away.\n\n" +
+      "It helps to juxtapose two futures. In one, the instrumented city serves its " +
+      "residents, transparent about what it gathers and why. In the other, the same " +
+      "machinery hardens into a quiet apparatus of control, its workings opaque, its " +
+      "memory long.\n\n" +
+      "Attention here is ephemeral, and that is precisely the danger. The story breaks, we " +
+      "feel a flicker of concern, and then we scroll on. The cities we are building will " +
+      "outlast our outrage. The least we can do is stay awake long enough to ask who they " +
+      "are really for.",
+    targetSpellings: [
+      "ubiquitous",
+      "benevolent",
+      "surreptitious",
+      "scrutinize",
+      "tacit",
+      "cognizant",
+      "juxtapose",
+      "ephemeral",
+    ],
+    read: false,
+  },
 ]
 
 function buildArticleDetail(seed: RawArticleDetail): ArticleDetail {

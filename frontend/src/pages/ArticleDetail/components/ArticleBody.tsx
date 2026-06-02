@@ -110,7 +110,11 @@ export function ArticleBody({
       data-slot="article-body"
       data-tone={tone}
       className={cn(
-        "rounded-3xl bg-card p-6 text-card-foreground ring-1 ring-foreground/5 sm:p-8",
+        // On phones the prose sits directly on the page — dropping the boxed
+        // card (bg/ring/rounded) and the double gutter gives the text room.
+        // The elevated reading card returns from sm: upward.
+        "px-3 py-2 text-card-foreground",
+        "sm:rounded-3xl sm:bg-card sm:p-8 sm:ring-1 sm:ring-foreground/5",
         FONT_SIZE_CLASS[fontSize],
         fontFamily === "serif"
           ? "[font-family:var(--font-reading-serif)]"

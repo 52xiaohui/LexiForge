@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import { WeakScoreMeter } from "@/components/common/WeakScoreMeter"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -155,8 +156,8 @@ export function Vocab() {
                   <TableCell>
                     <LastResponseBadge value={word.last_response} />
                   </TableCell>
-                  <TableCell className="font-heading text-sm tabular-nums">
-                    {word.weak_score}
+                  <TableCell>
+                    <WeakScoreMeter score={word.weak_score} />
                   </TableCell>
                   <TableCell className="text-sm tabular-nums text-muted-foreground">
                     {word.study_count}
