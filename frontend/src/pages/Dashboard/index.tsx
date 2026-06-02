@@ -1,3 +1,5 @@
+import type { ReactNode } from "react"
+
 import {
   Activity03Icon,
   AlertCircleIcon,
@@ -21,6 +23,7 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
+import { cn } from "@/lib/utils"
 
 import { NextAction } from "./components/NextAction"
 import { NextReview } from "./components/NextReview"
@@ -65,7 +68,7 @@ export function Dashboard() {
   const isFirstRun = summary != null && total === 0 && weak === 0
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8 sm:space-y-10">
       {isFirstRun ? (
         <FirstRunCard />
       ) : (
@@ -84,7 +87,21 @@ export function Dashboard() {
             />
           </section>
 
-          <section className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          {/* Phones: a single consolidated summary strip instead of four
+              separate ring'd StatCards, so 总览 doesn't open with a wall of
+              boxes. The full StatCard grid returns from `sm` up. */}
+          <MobileStatStrip
+            total={formatCount(total)}
+            weak={formatCount(weak)}
+            weakPct={weakPct}
+            practiced={practiced}
+            target={target}
+            progressPct={progressPct}
+            streakDays={streakDays}
+            lastSync={lastSync}
+          />
+
+          <section className="hidden gap-4 sm:grid sm:grid-cols-2 xl:grid-cols-4">
             <StatCard
               label="总单词数"
               value={formatCount(total)}
@@ -223,6 +240,106 @@ function StepCard({ step, title, desc, icon }: StepCardProps) {
       </div>
       <div className="mt-2 font-heading text-sm font-medium">{title}</div>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{desc}</p>
+    </div>
+  )
+}
+
+interface MobileStatStripProps {
+  total: string
+  weak: string
+  weakPct: number
+  practiced: number
+  target: number
+  progressPct: number
+  streakDays: number
+  lastSync: string | null
+}
+
+/**
+ * Mobile-only condensed equivalent of the four StatCards. One bordered
+ * container split into a 2×2 grid by hairline dividers — keeps the same four
+ * numbers but as a single visual unit instead of four stacked ring'd boxes.
+ */
+function MobileStatStrip({
+  total,
+  weak,
+  weakPct,
+  practiced,
+  target,
+  progressPct,
+  streakDays,
+  lastSync,
+}: MobileStatStripProps) {
+  return (
+    <section className="sm:hidden">
+      <div className="grid grid-cols-2 overflow-hidden rounded-2xl ring-1 ring-foreground/10">
+        <StatCell
+          className="border-r border-b border-border/60"
+          label="总词数"
+          value={total}
+          hint="同步自墨墨"
+        />
+        <StatCell
+          className="border-b border-border/60"
+          label="薄弱词"
+          value={weak}
+          hint={`占 ${weakPct}%`}
+        />
+        <StatCell
+          className="border-r border-border/60"
+          label="今日进度"
+          value={
+            <span>
+              {practiced}
+              <span className="text-sm font-normal text-muted-foreground">
+                {" "}
+                / {target}
+              </span>
+            </span>
+          }
+          hint={
+            target > 0
+              ? streakDays > 0
+                ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
+                : `已练 ${progressPct}%`
+              : streakDays > 0
+                ? `连续 ${streakDays} 天`
+                : "暂无目标"
+          }
+        />
+        <StatCell
+          label="最近同步"
+          value={
+            <span className="text-xl">{formatRelativeTime(lastSync)}</span>
+          }
+          hint={lastSync ? "已是最新数据来源" : "尚未同步"}
+        />
+      </div>
+    </section>
+  )
+}
+
+interface StatCellProps {
+  label: string
+  value: ReactNode
+  hint?: string
+  className?: string
+}
+
+function StatCell({ label, value, hint, className }: StatCellProps) {
+  return (
+    <div className={cn("bg-card p-3.5", className)}>
+      <div className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
+        {label}
+      </div>
+      <div className="mt-1 font-heading text-2xl font-semibold tracking-tight tabular-nums">
+        {value}
+      </div>
+      {hint && (
+        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+          {hint}
+        </div>
+      )}
     </div>
   )
 }
