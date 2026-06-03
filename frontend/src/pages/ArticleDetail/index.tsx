@@ -8,8 +8,10 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { toast } from "sonner"
 
+import { ErrorState } from "@/components/common/StatusPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useReadingPrefs } from "@/hooks/use-reading-prefs"
 import {
   formatArticleLength,
@@ -19,6 +21,7 @@ import {
 } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
 import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
+import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
 import type {
   ArticleDetail as ArticleDetailType,
@@ -48,9 +51,14 @@ export function ArticleDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: article, isFetching } = useQuery({
+  const {
+    data: article,
+    isFetching,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["articles", id],
-    queryFn: async () => mockStore.getArticle(id),
+    queryFn: withSim(async () => mockStore.getArticle(id), { emptyValue: null }),
     enabled: Boolean(id),
   })
 
@@ -316,7 +324,20 @@ export function ArticleDetail() {
   const [wordListOpen, setWordListOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
 
-  if (!article && !isFetching) {
+  if (isError) {
+    return (
+      <ErrorState
+        description="没能加载这篇文章。请稍后重试。"
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (!article && isFetching) {
+    return <ReadingSkeleton />
+  }
+
+  if (!article) {
     return (
       <div className="grid min-h-[60vh] place-items-center">
         <div className="max-w-md text-center">
@@ -337,14 +358,6 @@ export function ArticleDetail() {
             </Link>
           </Button>
         </div>
-      </div>
-    )
-  }
-
-  if (!article) {
-    return (
-      <div className="py-24 text-center text-sm text-muted-foreground">
-        加载中…
       </div>
     )
   }
@@ -603,4 +616,28 @@ ${article.content_markdown}
 
 ${targets}
 `
+}
+
+function ReadingSkeleton() {
+  return (
+    <div className="pb-20 sm:pb-4">
+      <div className="mt-2 mb-2">
+        <Skeleton className="h-8 w-24 rounded-md" />
+      </div>
+      <Skeleton className="h-11 w-full rounded-xl" />
+      <div className="mx-auto mt-4 w-full max-w-[70ch] space-y-6">
+        <div className="space-y-3 py-2">
+          <Skeleton className="h-9 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }

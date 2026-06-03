@@ -14,6 +14,7 @@ import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
+import { EmptyState, ErrorState } from "@/components/common/StatusPanel"
 import { WeakScoreMeter } from "@/components/common/WeakScoreMeter"
 import {
   AlertDialog,
@@ -41,6 +42,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -51,6 +53,7 @@ import {
 } from "@/components/ui/table"
 import { formatDateShort } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
+import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
 import type { LastResponse, VocabWord } from "@/types/api"
 
@@ -70,9 +73,9 @@ export function VocabWeak() {
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const { data = [] } = useQuery({
+  const { data = [], isPending, isError, refetch } = useQuery({
     queryKey: ["vocab", "weak"],
-    queryFn: async () => mockStore.listWeakWords(),
+    queryFn: withSim(async () => mockStore.listWeakWords(), { emptyValue: [] }),
   })
 
   const removeFromSelection = (id: string) => {
@@ -193,6 +196,29 @@ export function VocabWeak() {
       setSortBy(column)
       setSortDir("desc")
     }
+  }
+
+  if (isPending) {
+    return <WeakSkeleton />
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        description="没能加载薄弱词。请稍后重试。"
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={CheckmarkCircle02Icon}
+        title="暂无薄弱词"
+        description="已掌握和忽略的词不会出现在这里。下次同步后，新的薄弱词会出现。"
+      />
+    )
   }
 
   return (
@@ -698,5 +724,24 @@ function RowActions({ spelling, onMaster, onIgnore }: RowActionsProps) {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  )
+}
+
+function WeakSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-4 w-72" />
+      <Skeleton className="h-14 w-full rounded-2xl" />
+      <div className="space-y-2 rounded-2xl border border-border/60 p-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4">
+            <Skeleton className="size-4 rounded" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 flex-1" />
+            <Skeleton className="h-4 w-16" />
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
