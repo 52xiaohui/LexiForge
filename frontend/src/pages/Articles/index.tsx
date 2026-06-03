@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 
+import { EmptyState, ErrorState } from "@/components/common/StatusPanel"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   formatArticleLength,
   formatCoverage,
@@ -28,13 +30,14 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { mockStore } from "@/lib/mock-data"
+import { withSim } from "@/lib/query-sim"
 import type { ArticleDetail } from "@/types/api"
 
 export function Articles() {
   const queryClient = useQueryClient()
-  const { data = [] } = useQuery({
+  const { data = [], isPending, isError, refetch } = useQuery({
     queryKey: ["articles", "list"],
-    queryFn: async () => mockStore.listArticles(),
+    queryFn: withSim(async () => mockStore.listArticles(), { emptyValue: [] }),
   })
 
   const deleteArticle = useMutation({
@@ -68,20 +71,27 @@ export function Articles() {
     },
   })
 
+  if (isPending) {
+    return <ArticleListSkeleton />
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        description="没能加载文章历史。请稍后重试。"
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
   if (data.length === 0) {
     return (
-      <div className="grid min-h-[60vh] place-items-center">
-        <div className="max-w-md text-center">
-          <div className="mx-auto mb-6 grid size-14 place-items-center rounded-3xl bg-muted">
-            <HugeiconsIcon icon={Notebook02Icon} size={22} strokeWidth={1.6} />
-          </div>
-          <div className="font-heading text-2xl font-semibold tracking-tight">
-            还没有文章
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            点击下方按钮，用你的薄弱词生成第一篇文章。
-          </p>
-          <Button asChild size="default" className="mt-6">
+      <EmptyState
+        icon={Notebook02Icon}
+        title="还没有文章"
+        description="点击下方按钮，用你的薄弱词生成第一篇文章。"
+        action={
+          <Button asChild size="default">
             <Link to="/articles/new">
               <HugeiconsIcon
                 icon={SparklesIcon}
@@ -91,8 +101,8 @@ export function Articles() {
               生成新文章
             </Link>
           </Button>
-        </div>
-      </div>
+        }
+      />
     )
   }
 
@@ -178,6 +188,33 @@ export function Articles() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ArticleListSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-4 w-44" />
+        <Skeleton className="h-8 w-24 rounded-md" />
+      </div>
+      <ul className="space-y-3">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <li
+            key={i}
+            className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4"
+          >
+            <Skeleton className="h-5 w-2/3" />
+            <div className="flex flex-wrap items-center gap-2">
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-20" />
+              <Skeleton className="h-4 w-24" />
+            </div>
           </li>
         ))}
       </ul>

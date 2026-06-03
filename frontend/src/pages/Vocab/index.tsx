@@ -1,6 +1,7 @@
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
+  Book02Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -9,6 +10,7 @@ import { useMemo, useState } from "react"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { MasteryMeter } from "@/components/common/MasteryMeter"
+import { EmptyState, ErrorState } from "@/components/common/StatusPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -31,6 +34,7 @@ import {
 import { formatDateShort } from "@/lib/formatters"
 import { masteryTierFor, type MasteryTierId } from "@/lib/mastery"
 import { mockStore } from "@/lib/mock-data"
+import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
 import type { LastResponse, VocabWord } from "@/types/api"
 
@@ -52,9 +56,9 @@ export function Vocab() {
   const [masteryFilter, setMasteryFilter] = useState<MasteryFilter>("ALL")
   const [page, setPage] = useState(1)
 
-  const { data = [] } = useQuery({
+  const { data = [], isPending, isError, refetch } = useQuery({
     queryKey: ["vocab", "words"],
-    queryFn: async () => mockStore.listWords(),
+    queryFn: withSim(async () => mockStore.listWords(), { emptyValue: [] }),
   })
 
   // Distribution by mastery tier across the whole library — gives the page its
@@ -104,6 +108,29 @@ export function Vocab() {
   }
 
   const resetPage = () => setPage(1)
+
+  if (isPending) {
+    return <VocabSkeleton />
+  }
+
+  if (isError) {
+    return (
+      <ErrorState
+        description="没能加载词库。请稍后重试。"
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (data.length === 0) {
+    return (
+      <EmptyState
+        icon={Book02Icon}
+        title="词库还是空的"
+        description="同步你的墨墨学习记录后，单词会出现在这里。"
+      />
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -323,6 +350,30 @@ function WordCard({ word }: { word: VocabWord }) {
             </span>
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+function VocabSkeleton() {
+  return (
+    <div className="space-y-6">
+      <Skeleton className="h-4 w-56" />
+      <div className="flex flex-wrap gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-8 w-20 rounded-full" />
+        ))}
+      </div>
+      <Skeleton className="h-14 w-full rounded-2xl" />
+      <div className="space-y-2 rounded-2xl border border-border/60 p-3">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-4">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 flex-1" />
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-4 w-16" />
+          </div>
+        ))}
       </div>
     </div>
   )
