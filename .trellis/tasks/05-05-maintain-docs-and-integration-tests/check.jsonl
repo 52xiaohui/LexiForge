@@ -1,4 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend package guideline index for verification."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify database-backed MVP contracts and integration coverage."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General backend quality checklist for tests."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify search-first consistency for renamed environment variables."}

@@ -12,9 +12,6 @@ import (
 )
 
 // Handler is the HTTP layer for vocabulary-related endpoints.
-//
-// MVP only registers stub routes that return 501; the real wiring lands
-// once Service / Repository are implemented.
 type Handler struct {
 	svc *Service
 }
@@ -31,7 +28,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.GET("/:id", h.GetByID)
 }
 
-// ListRecords stubs `GET /api/v1/vocab/records`.
+// ListRecords handles `GET /api/v1/vocab/records`.
 func (h *Handler) ListRecords(c *gin.Context) {
 	q, ok := parseQuery(c)
 	if !ok {
@@ -41,7 +38,7 @@ func (h *Handler) ListRecords(c *gin.Context) {
 	respond(c, result, err)
 }
 
-// ListWeak stubs `GET /api/v1/vocab/weak`.
+// ListWeak handles `GET /api/v1/vocab/weak`.
 func (h *Handler) ListWeak(c *gin.Context) {
 	q, ok := parseQuery(c)
 	if !ok {
@@ -51,13 +48,13 @@ func (h *Handler) ListWeak(c *gin.Context) {
 	respond(c, result, err)
 }
 
-// Summary stubs `GET /api/v1/vocab/summary`.
+// Summary handles `GET /api/v1/vocab/summary`.
 func (h *Handler) Summary(c *gin.Context) {
 	result, err := h.svc.Summary()
 	respond(c, result, err)
 }
 
-// GetByID stubs `GET /api/v1/vocab/:id`.
+// GetByID handles `GET /api/v1/vocab/:id`.
 func (h *Handler) GetByID(c *gin.Context) {
 	result, err := h.svc.GetByID(c.Param("id"))
 	respond(c, result, err)

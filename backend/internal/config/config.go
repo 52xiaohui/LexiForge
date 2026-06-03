@@ -1,8 +1,8 @@
 // Package config loads runtime configuration from the project root .env file.
 //
-// Defaults match docker-compose.yml at the repo root so a `docker compose up`
-// works out of the box. Real secrets (MAIMEMO_TOKEN, OPENAI_API_KEY, ...) are
-// never given a non-empty default — they must come from .env.
+// Defaults target a local developer database. Real secrets (MAIMEMO_TOKEN,
+// OPENAI_API_KEY, ...) are never given a non-empty default; they must come from
+// .env.
 package config
 
 import (
@@ -22,7 +22,7 @@ type Config struct {
 	DatabaseURL string
 	LogLevel    string // debug | info | warn | error
 
-	// Pass-through secrets — empty in MVP skeleton, filled by user later.
+	// Pass-through secrets: empty until filled by the user's .env.
 	MaimemoToken  string
 	OpenAIAPIKey  string
 	OpenAIBaseURL string

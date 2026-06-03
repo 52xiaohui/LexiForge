@@ -7,9 +7,8 @@ Desktop.ini
 !.vscode/extensions.json
 !.vscode/settings.json
 
-# Per-developer AI / workflow runtime state (never commit) --------------------
+# Per-developer AI runtime state (never commit) -------------------------------
 .claude/settings.local.json
-.trellis/workspace/
 
 # Local skill/reference folder -------------------------------------------------
 memo-api/

@@ -1,5 +1,0 @@
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend package guideline index for docs and integration test changes."}
-{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Database-backed MVP sync/article contracts and required testing patterns."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "General backend quality checklist for tests."}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Environment variable rename requires search-first consistency checks."}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Integration tests validate API/service/database data flow boundaries."}

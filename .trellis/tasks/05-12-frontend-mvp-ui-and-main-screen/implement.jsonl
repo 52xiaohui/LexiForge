@@ -1,7 +1,0 @@
-{"file": "docs/02-architecture.md", "reason": "技术栈锁定 — Vite + React + TS + Tailwind + shadcn/ui + React Router + TanStack Query；前端不持有 Token，所有请求经 Go 后端代理"}
-{"file": "docs/06-frontend.md", "reason": "MVP 6 个页面的路由 / Dashboard 应展示内容 / 文章生成页约束（15 ≤ target_word_count ≤ 80，N>80 disable 等）/ 文章详情高亮规则"}
-{"file": "docs/01-product.md", "reason": "产品定位 / 用户画像 / MVP 范围（不开放登录、env Token、薄弱词概念）— 影响 UI 文案和信息层级"}
-{"file": "docs/04-api.md", "reason": "后端 API 形状，用于 mock 数据结构 + 后续接入前端类型；本任务用 mock，但接口契约要参照真实 API 设计"}
-{"file": ".trellis/spec/frontend/index.md", "reason": "前端 spec 入口；本任务需要在 directory-structure / component-guidelines / state-management 三个空模板里沉淀骨架约定"}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "建立 design tokens / 共享组件时避免重复模式；Dashboard 卡片要复用而非各自重写"}
-{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "mock 数据 → TanStack Query → 后端 API 的数据流要预留接入位置，避免后续硬替换"}

@@ -29,10 +29,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.GET("/latest", h.LatestSync)
 }
 
-// SyncMaimemo stubs `POST /api/v1/sync/maimemo`.
-//
-// MVP semantics from docs/04-api.md: synchronous full-pull, returns counts.
-// This stub will be replaced once the maimemo client lands.
+// SyncMaimemo handles `POST /api/v1/sync/maimemo`.
 func (h *Handler) SyncMaimemo(c *gin.Context) {
 	result, err := h.svc.Sync(c.Request.Context())
 	if err != nil {
@@ -42,7 +39,7 @@ func (h *Handler) SyncMaimemo(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// LatestSync stubs `GET /api/v1/sync/latest`.
+// LatestSync handles `GET /api/v1/sync/latest`.
 func (h *Handler) LatestSync(c *gin.Context) {
 	latest, err := h.svc.LatestSync()
 	if err != nil {

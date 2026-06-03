@@ -1,6 +1,0 @@
-{"file": "docs/02-architecture.md", "reason": "校验目录结构、分层是否符合文档"}
-{"file": "docs/03-database.md", "reason": "校验 MVP 5 张表的字段、唯一键、seed 是否齐全"}
-{"file": "docs/04-api.md", "reason": "校验 MVP 路由是否齐全、错误响应结构是否一致"}
-{"file": "docs/07-security.md", "reason": "校验日志脱敏占位、错误码命名"}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "项目质量规则 (当前为模板,但 check agent 仍需扫一眼)"}
-{"file": ".trellis/tasks/05-01-bootstrap-backend-skeleton/prd.md", "reason": "验收标准在此,逐条核对"}

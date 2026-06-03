@@ -12,25 +12,25 @@ article Markdown.
 
 ## Quick start (local Go)
 
-```bash
-# 1. start Postgres however you prefer (e.g. compose)
-docker compose up -d postgres
+From the repo root:
 
-# 2. copy env
-cp ../.env.example ../.env
+```powershell
+# 1. Copy env and edit secrets/database URL if needed.
+Copy-Item .env.example .env
 
-# 3. run the server
+# 2. Create the default local database/user once.
+#    If they already exist, keep the existing ones.
+psql -U postgres -c "CREATE ROLE lexiforge LOGIN PASSWORD 'lexiforge';"
+psql -U postgres -c "CREATE DATABASE lexiforge OWNER lexiforge;"
+
+# 3. Run the server.
+Set-Location backend
 go run ./cmd/server
 ```
 
-## Quick start (full stack with compose)
+Then verify the server from another terminal:
 
-From the repo root:
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-
+```powershell
 curl http://localhost:8080/healthz
 # {"status":"ok"}
 
@@ -53,8 +53,7 @@ go test ./...
 ```
 
 Postgres integration tests are opt-in so the default test suite does not
-require Docker or a local database. To run them, provide an isolated test
-database URL:
+require a local database. To run them, provide an isolated test database URL:
 
 ```bash
 LEXIFORGE_TEST_DATABASE_URL="postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable" go test ./internal/database
@@ -91,7 +90,6 @@ backend/
     maimemo/                     MaiMemo client + sync handler/service/repo
     ai/                          OpenAI-compatible article generation client
     export/                      v0.5+ export skeleton (empty in MVP)
-  Dockerfile                     multi-stage static build
 ```
 
 DB tables created by AutoMigrate: `users`, `vocab_words`, `study_records`,
