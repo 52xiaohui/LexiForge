@@ -3,6 +3,7 @@ package vocabulary
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,6 +40,7 @@ type RecordRow struct {
 	Provider       string         `json:"provider"`
 	ProviderVocID  string         `json:"provider_voc_id"`
 	Spelling       string         `json:"spelling"`
+	Translation    string         `json:"translation"`
 	LastResponse   string         `json:"last_response"`
 	StudyCount     int            `json:"study_count"`
 	Tags           datatypes.JSON `json:"tags"`
@@ -96,6 +98,7 @@ func (r *Repository) GetRecord(userID, id uuid.UUID) (RecordRow, error) {
 	err := r.db.Table("study_records AS sr").
 		Select(recordSelectColumns()).
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
+		Joins(dictionaryTranslationJoin("vw.spelling")).
 		Where("sr.user_id = ? AND sr.id = ?", userID, id).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -152,6 +155,7 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 	query := r.db.Table("study_records AS sr").
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
+		Joins(dictionaryTranslationJoin("vw.spelling")).
 		Where("sr.user_id = ?", opts.UserID)
 	if opts.LastResponse != "" {
 		query = query.Where("sr.last_response = ?", opts.LastResponse)
@@ -174,10 +178,28 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 
 func recordSelectColumns() string {
 	return `sr.id, sr.user_id, sr.word_id, sr.provider, sr.provider_voc_id,
-		vw.spelling, sr.last_response, sr.study_count, sr.tags, sr.add_date,
+		vw.spelling, COALESCE(dict.translation, '') AS translation,
+		sr.last_response, sr.study_count, sr.tags, sr.add_date,
 		sr.first_study_date, sr.last_study_date, sr.next_study_date,
 		sr.mastery_score, sr.weak_score, sr.score_version, sr.score_reasons,
 		sr.last_scored_at, sr.synced_at, sr.created_at, sr.updated_at`
+}
+
+func dictionaryTranslationJoin(spellingColumn string) string {
+	return fmt.Sprintf(`LEFT JOIN LATERAL (
+		SELECT string_agg(
+			trim(concat_ws(' ', NULLIF(t.item->>'pos', ''), NULLIF(t.item->>'tranCn', ''))),
+			'; '
+		) AS translation
+		FROM dictionary_entries AS de
+		CROSS JOIN LATERAL jsonb_array_elements(de.translations) AS t(item)
+		WHERE de.source = 'kajweb_dict'
+			AND de.normalized_headword = lower(trim(%s))
+			AND NULLIF(t.item->>'tranCn', '') IS NOT NULL
+		GROUP BY de.id, de.source_book_id
+		ORDER BY de.source_book_id ASC
+		LIMIT 1
+	) AS dict ON true`, spellingColumn)
 }
 
 func orderClause(sort string, weakOnly bool) string {

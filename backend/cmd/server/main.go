@@ -20,6 +20,7 @@ import (
 	"lexiforge/backend/internal/article"
 	"lexiforge/backend/internal/config"
 	"lexiforge/backend/internal/database"
+	"lexiforge/backend/internal/dictionary"
 	"lexiforge/backend/internal/export"
 	"lexiforge/backend/internal/maimemo"
 	"lexiforge/backend/internal/middleware"
@@ -103,6 +104,7 @@ func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client, aiClie
 	api := r.Group("/api/v1")
 
 	vocabulary.NewModule(db).Register(api)
+	dictionary.NewModule(db).Register(api)
 	article.NewModule(db, aiClient).Register(api)
 	maimemo.NewModule(db, mmClient, cfg.MaimemoToken).Register(api)
 	export.NewModule(db).Register(api)

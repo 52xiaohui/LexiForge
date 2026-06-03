@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"lexiforge/backend/internal/article"
+	"lexiforge/backend/internal/dictionary"
 	"lexiforge/backend/internal/user"
 	"lexiforge/backend/internal/vocabulary"
 )
@@ -28,6 +29,7 @@ func RunMigrations(db *gorm.DB) error {
 		&user.User{},
 		&vocabulary.VocabWord{},
 		&vocabulary.StudyRecord{},
+		&dictionary.Entry{},
 		&article.Article{},
 		&article.ArticleWord{},
 	); err != nil {
@@ -39,7 +41,7 @@ func RunMigrations(db *gorm.DB) error {
 	}
 
 	slog.Info("migrations applied", "tables", []string{
-		"users", "vocab_words", "study_records", "articles", "article_words",
+		"users", "vocab_words", "study_records", "dictionary_entries", "articles", "article_words",
 	})
 	return nil
 }

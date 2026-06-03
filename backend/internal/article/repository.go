@@ -230,7 +230,14 @@ func (r *Repository) GetArticle(ctx context.Context, userID, articleID uuid.UUID
 		return ArticleDetail{}, err
 	}
 	var words []ArticleWord
-	if err := r.db.WithContext(ctx).Where("article_id = ?", row.ID).Order("spelling ASC").Find(&words).Error; err != nil {
+	if err := r.db.WithContext(ctx).Table("article_words AS aw").
+		Select(`aw.id, aw.article_id, aw.word_id, aw.spelling, COALESCE(dict.translation, '') AS translation,
+			aw.form, aw.occurrence, aw.context_before, aw.context_after, aw.char_offset, aw.char_length,
+			aw.is_covered, aw.created_at`).
+		Joins(dictionaryTranslationJoin("aw.spelling")).
+		Where("aw.article_id = ?", row.ID).
+		Order("aw.spelling ASC").
+		Find(&words).Error; err != nil {
 		return ArticleDetail{}, err
 	}
 	return ArticleDetail{Article: row, Words: words}, nil
@@ -309,4 +316,21 @@ func decodeTags(raw datatypes.JSON) ([]string, error) {
 
 func quota(targetCount, percent int) int {
 	return targetCount * percent / 100
+}
+
+func dictionaryTranslationJoin(spellingColumn string) string {
+	return fmt.Sprintf(`LEFT JOIN LATERAL (
+		SELECT string_agg(
+			trim(concat_ws(' ', NULLIF(t.item->>'pos', ''), NULLIF(t.item->>'tranCn', ''))),
+			'; '
+		) AS translation
+		FROM dictionary_entries AS de
+		CROSS JOIN LATERAL jsonb_array_elements(de.translations) AS t(item)
+		WHERE de.source = 'kajweb_dict'
+			AND de.normalized_headword = lower(trim(%s))
+			AND NULLIF(t.item->>'tranCn', '') IS NOT NULL
+		GROUP BY de.id, de.source_book_id
+		ORDER BY de.source_book_id ASC
+		LIMIT 1
+	) AS dict ON true`, spellingColumn)
 }

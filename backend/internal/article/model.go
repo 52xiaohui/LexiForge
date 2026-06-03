@@ -41,6 +41,7 @@ type ArticleWord struct {
 	ArticleID     uuid.UUID            `gorm:"type:uuid;not null;index;uniqueIndex:uq_article_words_article_word" json:"article_id"`
 	WordID        uuid.UUID            `gorm:"type:uuid;not null;uniqueIndex:uq_article_words_article_word" json:"word_id"`
 	Spelling      string               `gorm:"type:varchar(255);not null" json:"spelling"`
+	Translation   string               `gorm:"->;-:migration;column:translation" json:"translation"`
 	Form          *string              `gorm:"type:varchar(255)" json:"form,omitempty"`
 	Occurrence    *int                 `json:"occurrence,omitempty"`
 	ContextBefore *string              `gorm:"type:varchar(64)" json:"context_before,omitempty"`

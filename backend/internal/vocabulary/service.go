@@ -41,6 +41,7 @@ type Record struct {
 	Provider       string         `json:"provider"`
 	ProviderVocID  string         `json:"provider_voc_id"`
 	Spelling       string         `json:"spelling"`
+	Translation    string         `json:"translation"`
 	LastResponse   string         `json:"last_response"`
 	StudyCount     int            `json:"study_count"`
 	Tags           []string       `json:"tags"`
@@ -175,6 +176,7 @@ func mapRecord(row RecordRow) (Record, error) {
 		Provider:       row.Provider,
 		ProviderVocID:  row.ProviderVocID,
 		Spelling:       row.Spelling,
+		Translation:    row.Translation,
 		LastResponse:   row.LastResponse,
 		StudyCount:     row.StudyCount,
 		Tags:           tags,
