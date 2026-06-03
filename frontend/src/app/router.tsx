@@ -7,26 +7,34 @@ import { createBrowserRouter, Navigate } from "react-router-dom"
 
 import { AppShell } from "@/components/layout/AppShell"
 
+import {
+  importArticleDetail,
+  importArticleNew,
+  importArticles,
+  importVocab,
+  importVocabWeak,
+} from "./route-loaders"
+
 // Dashboard is the default landing page and lightweight, so keep it eager.
 import { Dashboard } from "@/pages/Dashboard"
 import { NotFound } from "@/pages/NotFound"
 
 // Heavier routes (ArticleDetail ~25KB, ArticleNew ~20KB, VocabWeak ~17KB) are
-// behind React.lazy so the initial bundle only carries shell + dashboard.
+// behind React.lazy so the initial bundle only carries shell + dashboard. The
+// import thunks live in ./route-loaders so the Sidebar can reuse them to
+// prefetch a chunk on hover/focus.
 const ArticleDetail = lazy(() =>
-  import("@/pages/ArticleDetail").then((m) => ({ default: m.ArticleDetail })),
+  importArticleDetail().then((m) => ({ default: m.ArticleDetail })),
 )
 const ArticleNew = lazy(() =>
-  import("@/pages/ArticleNew").then((m) => ({ default: m.ArticleNew })),
+  importArticleNew().then((m) => ({ default: m.ArticleNew })),
 )
 const Articles = lazy(() =>
-  import("@/pages/Articles").then((m) => ({ default: m.Articles })),
+  importArticles().then((m) => ({ default: m.Articles })),
 )
-const Vocab = lazy(() =>
-  import("@/pages/Vocab").then((m) => ({ default: m.Vocab })),
-)
+const Vocab = lazy(() => importVocab().then((m) => ({ default: m.Vocab })))
 const VocabWeak = lazy(() =>
-  import("@/pages/VocabWeak").then((m) => ({ default: m.VocabWeak })),
+  importVocabWeak().then((m) => ({ default: m.VocabWeak })),
 )
 
 export interface RouteHandle {

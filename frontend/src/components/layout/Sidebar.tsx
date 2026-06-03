@@ -8,8 +8,9 @@ import {
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { Fragment } from "react"
-import { Link, NavLink } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 
+import { routePrefetch } from "@/app/route-loaders"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -22,7 +23,35 @@ interface NavItem {
   to: string
   label: string
   icon: IconSvgElement
+  /**
+   * When true, the item is only active on an exact path match. Defaults to a
+   * prefix match so a section item stays highlighted on its nested routes.
+   */
   end?: boolean
+  /**
+   * Escape hatch for sections whose nested routes can't be expressed as a
+   * simple prefix (e.g. `文章历史` owns `/articles/:id` but must yield to the
+   * sibling `/articles/new`). Returns whether the item is active.
+   */
+  match?: (pathname: string) => boolean
+}
+
+// Dedupe prefetch work across hovers — a dynamic import is module-cached, but
+// this avoids re-invoking the thunk and keeps intent obvious.
+const prefetched = new Set<string>()
+
+function prefetchRoute(to: string) {
+  if (prefetched.has(to)) return
+  const loader = routePrefetch[to]
+  if (!loader) return
+  prefetched.add(to)
+  void loader()
+}
+
+function isItemActive(item: NavItem, pathname: string): boolean {
+  if (item.match) return item.match(pathname)
+  if (item.end) return pathname === item.to
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
 }
 
 interface NavGroup {
@@ -45,7 +74,16 @@ const navGroups: NavGroup[] = [
   {
     label: "文章",
     items: [
-      { to: "/articles", label: "文章历史", icon: Notebook02Icon, end: true },
+      {
+        to: "/articles",
+        label: "文章历史",
+        icon: Notebook02Icon,
+        // Stay active while reading an article (`/articles/:id`) but defer to
+        // the sibling on `/articles/new`.
+        match: (p) =>
+          p === "/articles" ||
+          (p.startsWith("/articles/") && p !== "/articles/new"),
+      },
       { to: "/articles/new", label: "生成文章", icon: SparklesIcon },
     ],
   },
@@ -76,7 +114,7 @@ export function Sidebar({
   return (
     <div
       className={cn(
-        "flex h-full flex-col py-5 transition-[padding] duration-200",
+        "flex h-full flex-col py-5 transition-[padding] duration-200 motion-reduce:transition-none",
         isCollapsed ? "px-2" : "px-4",
       )}
     >
@@ -93,8 +131,10 @@ export function Sidebar({
         onCollapsedChange={onCollapsedChange}
       />
 
-      <nav className="mt-6 flex-1">
-        {navGroups.map((group, gi) => (
+      <nav aria-label="主导航" className="mt-6 flex-1">
+        {navGroups.map((group, gi) => {
+          const groupLabelId = `nav-group-${gi}`
+          return (
           <Fragment key={group.label}>
             {/* Collapsed mode loses the group label, so we draw a thin rule
                 between groups to preserve the rhythmic separation the label
@@ -107,10 +147,12 @@ export function Sidebar({
             )}
             <div className={cn(!isCollapsed && gi > 0 && "mt-6")}>
               <div
+                id={groupLabelId}
                 className={cn(
-                  "mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase transition-opacity",
+                  "mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase transition-opacity motion-reduce:transition-none",
                   // Fade rather than unmount so the label appears smoothly
-                  // when the rail expands.
+                  // when the rail expands. Kept in the DOM while collapsed so
+                  // it still labels the group for assistive tech.
                   isCollapsed
                     ? "pointer-events-none h-0 opacity-0 mb-0"
                     : "opacity-100",
@@ -119,6 +161,7 @@ export function Sidebar({
                 {group.label}
               </div>
               <ul
+                aria-labelledby={groupLabelId}
                 className={cn(
                   "space-y-0.5",
                   isCollapsed && "flex flex-col items-center",
@@ -132,14 +175,15 @@ export function Sidebar({
               </ul>
             </div>
           </Fragment>
-        ))}
+          )
+        })}
       </nav>
 
       {/* Footer — always shows the version pill. The collapse control used to
           live here; it now lives next to the brand for shorter mouse travel. */}
       <div
         className={cn(
-          "mt-6 transition-opacity",
+          "mt-6 transition-opacity motion-reduce:transition-none",
           isCollapsed && "opacity-0",
         )}
       >
@@ -234,35 +278,39 @@ interface NavItemLinkProps {
 }
 
 function NavItemLink({ item, collapsed }: NavItemLinkProps) {
+  // Active detection lives here (not NavLink) because `文章历史` needs to match
+  // `/articles/:id` while excluding the sibling `/articles/new` — a rule
+  // NavLink's prefix/`end` model can't express without double-activating.
+  const { pathname } = useLocation()
+  const isActive = isItemActive(item, pathname)
+  const prefetch = () => prefetchRoute(item.to)
+
   const link = (
-    <NavLink
+    <Link
       to={item.to}
-      end={item.end}
+      aria-current={isActive ? "page" : undefined}
       aria-label={collapsed ? item.label : undefined}
-      className={({ isActive }) =>
-        cn(
-          // Keep the rail item shape stable across modes so the active
-          // marker pulses but the link box doesn't reflow on toggle.
-          "relative flex items-center rounded-xl text-sm transition-colors",
-          collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
-          // Active state differs by mode:
-          // - expanded: full-fill pill (legacy, high contrast)
-          // - collapsed: subtle bg + a 2px left-edge accent. Avoids
-          //   making the entire 64px rail go black on every page change.
-          isActive
-            ? collapsed
-              ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-primary"
-              : "bg-primary text-primary-foreground"
-            : "text-foreground/70 hover:bg-muted hover:text-foreground",
-        )
-      }
+      onMouseEnter={prefetch}
+      onFocus={prefetch}
+      className={cn(
+        // Keep the rail item shape stable across modes so the active marker
+        // pulses but the link box doesn't reflow on toggle.
+        "relative flex items-center rounded-xl text-sm transition-colors motion-reduce:transition-none",
+        collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+        // Unified active treatment across modes: a calm muted fill plus a
+        // 3px left-edge accent — instead of flooding the expanded pill with
+        // solid primary on every page change.
+        isActive
+          ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-primary"
+          : "text-foreground/70 hover:bg-muted hover:text-foreground",
+      )}
     >
       <HugeiconsIcon icon={item.icon} size={16} strokeWidth={1.8} />
       {/* Fade label rather than remove it from the DOM, so layout doesn't
           flicker mid-transition. The width handle keeps the rail tight. */}
       <span
         className={cn(
-          "min-w-0 truncate transition-[opacity,max-width] duration-200",
+          "min-w-0 truncate transition-[opacity,max-width] duration-200 motion-reduce:transition-none",
           collapsed
             ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
             : "max-w-[160px] opacity-100",
@@ -270,7 +318,7 @@ function NavItemLink({ item, collapsed }: NavItemLinkProps) {
       >
         {item.label}
       </span>
-    </NavLink>
+    </Link>
   )
   if (!collapsed) return link
   return (
