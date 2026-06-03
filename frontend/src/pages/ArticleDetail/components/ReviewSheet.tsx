@@ -324,21 +324,36 @@ function FlashcardDeck({
         )}
       </button>
 
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onPrev}
-          disabled={cardIdx === 0}
-        >
-          <HugeiconsIcon
-            icon={ArrowLeft01Icon}
-            data-icon="inline-start"
-            strokeWidth={1.8}
-          />
-          上一张
-        </Button>
-        <div className="flex items-center gap-1">
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onPrev}
+            disabled={cardIdx === 0}
+          >
+            <HugeiconsIcon
+              icon={ArrowLeft01Icon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+            />
+            上一张
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNext}
+            disabled={cardIdx >= cards.length - 1}
+          >
+            下一张
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              data-icon="inline-end"
+              strokeWidth={1.8}
+            />
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -374,19 +389,6 @@ function FlashcardDeck({
             {word?.mastered ? "已掌握" : "掌握"}
           </Button>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onNext}
-          disabled={cardIdx >= cards.length - 1}
-        >
-          下一张
-          <HugeiconsIcon
-            icon={ArrowRight01Icon}
-            data-icon="inline-end"
-            strokeWidth={1.8}
-          />
-        </Button>
       </div>
 
       <Separator />
