@@ -104,7 +104,7 @@ export function TargetMark({
           data-slot="target-mark"
           data-tier={tier}
           className={cn(
-            "cursor-pointer font-medium text-foreground outline-offset-2 transition-[background,box-shadow] focus-visible:outline-2 focus-visible:outline-foreground",
+            "cursor-pointer rounded-md font-medium text-foreground outline-offset-2 transition duration-150 focus-visible:outline-2 focus-visible:outline-ring",
             TIER_CLASS[tier],
           )}
         >

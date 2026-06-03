@@ -400,10 +400,10 @@ export function ArticleDetail() {
   const onSpeechNext = () => karaoke.next()
 
   return (
-    <div className="space-y-4 pb-20 sm:pb-4">
+    <div className="pb-20 sm:pb-4">
       <ReadingProgress />
 
-      <div>
+      <div className="mt-2 mb-2">
         <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
           <Link to="/articles">
             <HugeiconsIcon
@@ -450,7 +450,7 @@ export function ArticleDetail() {
           coverage info, so the body can keep ~70ch on every screen. */}
       <div
         className={cn(
-          "mx-auto w-full",
+          "mx-auto mt-4 w-full",
           // ~70ch reading width — leans on Tailwind's max-w-prose token but
           // matches the body's serif tone via a slightly tighter constraint.
           "max-w-[70ch]",
@@ -460,17 +460,18 @@ export function ArticleDetail() {
           <h1 className="font-heading text-3xl leading-tight font-semibold tracking-tight">
             {article.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Badge variant="outline" className="text-[10px]">
               {formatDifficulty(article.difficulty)}
             </Badge>
             <Badge variant="outline" className="text-[10px]">
               {formatArticleLength(article.article_length)}
             </Badge>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
             <span>{article.topic}</span>
-            <span aria-hidden>·</span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
             <span>{formatRelativeTime(article.created_at)}</span>
-            <span aria-hidden>·</span>
+            <span aria-hidden className="text-muted-foreground/40">·</span>
             <span className="inline-flex items-center gap-1">
               <HugeiconsIcon
                 icon={CheckmarkCircle02Icon}
