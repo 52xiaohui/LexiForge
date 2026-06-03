@@ -190,6 +190,19 @@
     --reading-muted: oklch(0.7 0.02 70);
 }
 
+/* Tailwind's Preflight doesn't reset the UA <mark> styling, so target words
+ * whose tier sets no background (mastered / low-weak) leak the browser's solid
+ * `background:yellow; color:black` — illegible in dark mode and flattening the
+ * weak_score tiers into one block of yellow. Neutralise the default; the bare
+ * element selector sits below the tier utility classes, so tiers that do set a
+ * background (`bg-amber-*`, `bg-sky-*`) still win. */
+@layer base {
+    mark {
+        background-color: transparent;
+        color: inherit;
+    }
+}
+
 /* Hover-reveal: pulse same-paragraph target marks when the reader hovers any
  * one of them, so the eye can sweep the whole sentence's targets at once. */
 [data-slot="paragraph"]:has([data-slot="target-mark"]:hover)
