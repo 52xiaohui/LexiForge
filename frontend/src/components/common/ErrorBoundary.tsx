@@ -1,7 +1,9 @@
+import { RefreshIcon } from "@hugeicons/core-free-icons"
+import { HugeiconsIcon } from "@hugeicons/react"
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { Link } from "react-router-dom"
 
-import { ErrorState } from "@/components/common/StatusPanel"
+import { StatusPanel } from "@/components/common/StatusPanel"
 import { Button } from "@/components/ui/button"
 
 interface ErrorBoundaryProps {
@@ -43,14 +45,25 @@ export class ErrorBoundary extends Component<
         return this.props.fallback(error, this.reset)
       }
       return (
-        <ErrorState
+        <StatusPanel
+          icon={RefreshIcon}
+          tone="destructive"
           title="页面出了点问题"
           description={error.message || "未知错误。可以重试，或者先回到总览。"}
-          onRetry={this.reset}
-          secondaryAction={
-            <Button asChild variant="ghost">
-              <Link to="/dashboard">回到总览</Link>
-            </Button>
+          action={
+            <>
+              <Button variant="outline" size="sm" onClick={this.reset}>
+                <HugeiconsIcon
+                  icon={RefreshIcon}
+                  data-icon="inline-start"
+                  strokeWidth={1.8}
+                />
+                重试
+              </Button>
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/dashboard">回到总览</Link>
+              </Button>
+            </>
           }
         />
       )
