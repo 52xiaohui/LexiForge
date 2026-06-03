@@ -166,28 +166,30 @@ function WordListRow({
       <button
         type="button"
         onClick={onScrollTo}
-        className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
       >
-        <span className="font-heading text-sm font-medium">{aw.spelling}</span>
-        <span className="truncate text-xs text-muted-foreground">
-          {aw.translation}
+        <span className="flex items-baseline gap-2">
+          <span className="font-heading text-sm font-medium">
+            {aw.spelling}
+          </span>
+          {tier === "mastered" && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
+            >
+              已掌握
+            </Badge>
+          )}
+          {tier === "recognized" && (
+            <Badge
+              variant="outline"
+              className="border-sky-500/30 text-[10px] text-sky-600 dark:text-sky-400"
+            >
+              认得
+            </Badge>
+          )}
         </span>
-        {tier === "mastered" && (
-          <Badge
-            variant="outline"
-            className="border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
-          >
-            已掌握
-          </Badge>
-        )}
-        {tier === "recognized" && (
-          <Badge
-            variant="outline"
-            className="border-sky-500/30 text-[10px] text-sky-600 dark:text-sky-400"
-          >
-            认得
-          </Badge>
-        )}
+        <span className="text-xs text-muted-foreground">{aw.translation}</span>
       </button>
       <div className="flex items-center gap-1 transition-opacity group-hover/item:opacity-100 focus-within:opacity-100 [@media(hover:hover)]:opacity-0">
         <Button
