@@ -203,14 +203,6 @@
     }
 }
 
-/* Hover-reveal: pulse same-paragraph target marks when the reader hovers any
- * one of them, so the eye can sweep the whole sentence's targets at once. */
-[data-slot="paragraph"]:has([data-slot="target-mark"]:hover)
-    [data-slot="target-mark"]:not(:hover) {
-    box-shadow: 0 0 0 1px var(--color-foreground);
-    box-shadow: 0 0 0 1px color-mix(in oklch, currentColor 28%, transparent);
-}
-
 /* Karaoke: sentence currently being spoken by TTS. */
 [data-slot="sentence"][data-speaking="true"] {
     background-image: linear-gradient(

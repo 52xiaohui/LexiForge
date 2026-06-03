@@ -2,6 +2,7 @@ package article
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -89,6 +90,40 @@ func TestGenerateRetriesLowCoverageAndSavesAllTargetWords(t *testing.T) {
 	}
 	if len(repo.saved.Words) != 15 {
 		t.Fatalf("saved words = %d, want 15", len(repo.saved.Words))
+	}
+}
+
+func TestGenerateStripsMarkdownEmphasisBeforeSavingAndLocating(t *testing.T) {
+	targets := makeTargets(15)
+	rawContent := emphasizedContentForTargets(targets)
+	repo := &fakeArticleRepo{targets: targets}
+	aiClient := &fakeAIClient{resps: []*ai.GenerateArticleResponse{
+		{Title: "Emphasized", ContentMarkdown: rawContent, CoveredWords: nil, MissingWords: []string{}},
+	}}
+	svc := NewService(repo, aiClient)
+
+	got, err := svc.Generate(context.Background(), GenerateRequest{
+		Topic:           "campus life",
+		Difficulty:      "B1-B2",
+		ArticleLength:   "medium",
+		TargetWordCount: 15,
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	if got.Status != "succeeded" || got.CoveredWordCount != 15 {
+		t.Fatalf("result = %#v, want sanitized full coverage success", got)
+	}
+	if strings.Contains(repo.saved.ContentMarkdown, "*") {
+		t.Fatalf("saved content still contains Markdown emphasis: %q", repo.saved.ContentMarkdown)
+	}
+	if repo.saved.ContentMarkdown != contentForTargets(targets) {
+		t.Fatalf("saved content = %q, want %q", repo.saved.ContentMarkdown, contentForTargets(targets))
+	}
+	first := repo.saved.Words[0]
+	if !first.IsCovered || first.CharOffset == nil || *first.CharOffset != 0 {
+		t.Fatalf("first word = %#v, want located at sanitized offset 0", first)
 	}
 }
 
@@ -209,6 +244,13 @@ func contentForTargets(targets []TargetWordRecord) string {
 		}
 		out += target.Spelling
 	}
+	return out
+}
+
+func emphasizedContentForTargets(targets []TargetWordRecord) string {
+	out := contentForTargets(targets)
+	out = strings.Replace(out, targets[0].Spelling, "**"+targets[0].Spelling+"**", 1)
+	out = strings.Replace(out, targets[1].Spelling, "*"+targets[1].Spelling+"*", 1)
 	return out
 }
 

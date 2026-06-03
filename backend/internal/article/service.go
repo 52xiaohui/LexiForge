@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -18,6 +19,8 @@ import (
 )
 
 const promptVersionV1 = "v1"
+
+var markdownEmphasisRE = regexp.MustCompile(`\*{1,2}([^*\n]+?)\*{1,2}`)
 
 // Service orchestrates article generation, coverage validation and listing.
 type Service struct {
@@ -74,6 +77,7 @@ type ArticleResponse struct {
 	GenerationStatus string    `json:"generation_status"`
 	ModelName        string    `json:"model_name"`
 	PromptVersion    string    `json:"prompt_version"`
+	CreatedAt        string    `json:"created_at"`
 }
 
 type ArticleDetailResponse struct {
@@ -131,6 +135,7 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateRe
 		if err != nil {
 			return GenerateResult{}, err
 		}
+		aiResp.ContentMarkdown = stripMarkdownEmphasis(aiResp.ContentMarkdown)
 		words, covered = locateCoverage(aiResp.ContentMarkdown, targets, aiResp.CoveredWords)
 		if coverageRate(covered, len(targets)) >= 0.9 || attempt == 2 {
 			break
@@ -263,6 +268,7 @@ func mapArticleDetail(detail ArticleDetail) ArticleDetailResponse {
 			GenerationStatus: detail.Article.GenerationStatus,
 			ModelName:        detail.Article.ModelName,
 			PromptVersion:    detail.Article.PromptVersion,
+			CreatedAt:        detail.Article.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		},
 		Words: detail.Words,
 	}
@@ -334,6 +340,10 @@ func buildAIRequest(req GenerateRequest, targets []TargetWordRecord, missing []s
 		PromptVersion:   promptVersionV1,
 		MissingWords:    missing,
 	}
+}
+
+func stripMarkdownEmphasis(content string) string {
+	return markdownEmphasisRE.ReplaceAllString(content, "$1")
 }
 
 func locateCoverage(content string, targets []TargetWordRecord, claims []ai.CoveredWord) ([]ArticleWordDraft, int) {

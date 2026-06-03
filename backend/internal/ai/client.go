@@ -190,7 +190,7 @@ func articleSystemPrompt() string {
 
 func articleUserPrompt(req GenerateArticleRequest) string {
 	data, _ := json.Marshal(req)
-	return "Generate an English article for this request. Use target words naturally. Bold the first appearance when natural. If missing_words is present, revise to include them while preserving topic and difficulty.\n\n" + string(data)
+	return "Generate an English article for this request. Use target words naturally. Do not apply Markdown emphasis, bold, italics, or other inline markup to target words or any article text. If missing_words is present, revise to include them while preserving topic and difficulty.\n\n" + string(data)
 }
 
 func articleResponseSchema() map[string]any {
