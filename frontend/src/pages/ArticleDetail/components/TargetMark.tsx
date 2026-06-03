@@ -22,7 +22,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { mockStore } from "@/lib/mock-data"
+import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { ArticleWord, VocabWord } from "@/types/api"
 
@@ -105,7 +105,7 @@ export function TargetMark({
           data-tier={tier}
           className={cn(
             "cursor-pointer rounded-md font-medium text-foreground outline-offset-2 transition duration-150 focus-visible:outline-2 focus-visible:outline-ring",
-            TIER_CLASS[tier],
+            TIER_CLASS[tier]
           )}
         >
           {children}
@@ -189,13 +189,12 @@ export function TargetMark({
           </div>
         )}
 
-        {word?.related_article_ids &&
-          word.related_article_ids.length > 1 && (
-            <RelatedArticles
-              currentArticleId={articleId}
-              relatedIds={word.related_article_ids}
-            />
-          )}
+        {word?.related_article_ids && word.related_article_ids.length > 1 && (
+          <RelatedArticles
+            currentArticleId={articleId}
+            relatedIds={word.related_article_ids}
+          />
+        )}
 
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
@@ -220,7 +219,9 @@ export function TargetMark({
               size="sm"
               className="flex-1"
               disabled={word?.mastered}
-              onClick={() => onMaster(articleWord.word_id, articleWord.spelling)}
+              onClick={() =>
+                onMaster(articleWord.word_id, articleWord.spelling)
+              }
             >
               <HugeiconsIcon
                 icon={CheckmarkCircle02Icon}
@@ -303,10 +304,10 @@ function RelatedArticles({
 }: RelatedArticlesProps) {
   const { data: articles = [] } = useQuery({
     queryKey: ["articles", "list"],
-    queryFn: async () => mockStore.listArticles(),
+    queryFn: () => api.listArticles(),
   })
   const others = articles.filter(
-    (a) => relatedIds.includes(a.id) && a.id !== currentArticleId,
+    (a) => relatedIds.includes(a.id) && a.id !== currentArticleId
   )
   if (others.length === 0) return null
   return (

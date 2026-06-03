@@ -21,6 +21,9 @@ export interface NextActionProps {
   summary: VocabSummary | undefined
   progress: TodayProgress | undefined
   unreadArticle: Article | null | undefined
+  isSyncing?: boolean
+  syncCooldownRemaining?: number
+  onSync?: () => void
   /**
    * When true, the vocab summary query is still fetching. The component
    * renders a neutral skeleton so the user doesn't see a flashed "同步异常"
@@ -47,7 +50,12 @@ const SYNC_STALE_HOURS = 24
 
 const toneStyles: Record<
   Tone,
-  { card: string; icon: string; eyebrow: string; button: "default" | "outline" | "secondary" }
+  {
+    card: string
+    icon: string
+    eyebrow: string
+    button: "default" | "outline" | "secondary"
+  }
 > = {
   primary: {
     card: "bg-foreground text-background",
@@ -78,7 +86,7 @@ const toneStyles: Record<
 function computePlan(
   summary: VocabSummary | undefined,
   progress: TodayProgress | undefined,
-  unread: Article | null | undefined,
+  unread: Article | null | undefined
 ): Plan {
   // 1. Stale sync takes highest priority: without fresh data nothing else is useful.
   const lastSync = summary?.last_synced_at
@@ -166,7 +174,15 @@ function computePlan(
   }
 }
 
-export function NextAction({ summary, progress, unreadArticle, isLoading }: NextActionProps) {
+export function NextAction({
+  summary,
+  progress,
+  unreadArticle,
+  isLoading,
+  isSyncing = false,
+  syncCooldownRemaining = 0,
+  onSync,
+}: NextActionProps) {
   // While the summary is still loading we can't tell whether the user is in
   // the "sync stale" branch or not. Render a neutral skeleton to avoid a
   // flash of the destructive "同步异常" card on first mount.
@@ -194,12 +210,19 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
   const plan = computePlan(summary, progress, unreadArticle)
   const tone = toneStyles[plan.tone]
   const isDark = plan.tone === "primary"
+  const syncDisabled =
+    plan.tone === "sync" && (isSyncing || (syncCooldownRemaining ?? 0) > 0)
+  const syncLabel = isSyncing
+    ? "同步中"
+    : (syncCooldownRemaining ?? 0) > 0
+      ? `${syncCooldownRemaining}s 后可同步`
+      : plan.primaryLabel
 
   return (
     <section
       className={cn(
         "relative overflow-hidden rounded-3xl p-6 sm:p-8",
-        tone.card,
+        tone.card
       )}
     >
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
@@ -207,7 +230,7 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
           <div
             className={cn(
               "grid size-11 shrink-0 place-items-center rounded-2xl",
-              tone.icon,
+              tone.icon
             )}
           >
             <HugeiconsIcon icon={plan.icon} size={20} strokeWidth={1.8} />
@@ -216,7 +239,7 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
             <div
               className={cn(
                 "text-[10px] font-medium tracking-[0.2em] uppercase",
-                tone.eyebrow,
+                tone.eyebrow
               )}
             >
               {plan.eyebrow}
@@ -224,7 +247,7 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
             <h2
               className={cn(
                 "font-heading text-xl leading-tight font-semibold tracking-tight sm:text-2xl",
-                isDark ? "text-background" : "text-foreground",
+                isDark ? "text-background" : "text-foreground"
               )}
             >
               {plan.headline}
@@ -232,7 +255,7 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
             <p
               className={cn(
                 "max-w-xl text-sm leading-relaxed",
-                isDark ? "text-background/80" : "text-muted-foreground",
+                isDark ? "text-background/80" : "text-muted-foreground"
               )}
             >
               {plan.description}
@@ -241,16 +264,32 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-          <Button asChild size="default" variant={tone.button}>
-            <Link to={plan.primaryTo}>
-              {plan.primaryLabel}
+          {plan.tone === "sync" && onSync ? (
+            <Button
+              size="default"
+              variant={tone.button}
+              disabled={syncDisabled}
+              onClick={onSync}
+            >
+              {syncLabel}
               <HugeiconsIcon
                 icon={ArrowRight01Icon}
                 data-icon="inline-end"
                 strokeWidth={1.8}
               />
-            </Link>
-          </Button>
+            </Button>
+          ) : (
+            <Button asChild size="default" variant={tone.button}>
+              <Link to={plan.primaryTo}>
+                {plan.primaryLabel}
+                <HugeiconsIcon
+                  icon={ArrowRight01Icon}
+                  data-icon="inline-end"
+                  strokeWidth={1.8}
+                />
+              </Link>
+            </Button>
+          )}
           {plan.secondaryLabel && plan.secondaryTo && (
             <Button
               asChild
@@ -264,11 +303,6 @@ export function NextAction({ summary, progress, unreadArticle, isLoading }: Next
             >
               <Link to={plan.secondaryTo}>{plan.secondaryLabel}</Link>
             </Button>
-          )}
-          {plan.tone === "sync" && (
-            <p className="w-full text-[11px] text-muted-foreground">
-              MVP 阶段同步通过 env Token 触发，真实按钮稍后接入。
-            </p>
           )}
         </div>
       </div>

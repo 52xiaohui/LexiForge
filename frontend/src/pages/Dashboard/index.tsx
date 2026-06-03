@@ -11,8 +11,10 @@ import {
   SparklesIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
+import { toast } from "sonner"
 
 import { StatCard } from "@/components/common/StatCard"
 import { Button } from "@/components/ui/button"
@@ -22,7 +24,7 @@ import {
   formatCount,
   formatRelativeTime,
 } from "@/lib/formatters"
-import { mockStore } from "@/lib/mock-data"
+import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 import { NextAction } from "./components/NextAction"
@@ -32,25 +34,67 @@ import { RecentArticles } from "./components/RecentArticles"
 const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", { weekday: "long" })
 
 export function Dashboard() {
+  const queryClient = useQueryClient()
+  const [cooldownUntil, setCooldownUntil] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+
   const { data: summary, isPending: isSummaryPending } = useQuery({
     queryKey: ["vocab", "summary"],
-    queryFn: async () => mockStore.vocabSummary(),
+    queryFn: () => api.vocabSummary(),
   })
   const { data: progress } = useQuery({
     queryKey: ["progress", "today"],
-    queryFn: async () => mockStore.todayProgress(),
+    queryFn: () => api.todayProgress(),
   })
   const { data: articles } = useQuery({
     queryKey: ["articles", "recent"],
-    queryFn: async () => mockStore.listRecentArticles(),
+    queryFn: () => api.listRecentArticles(),
   })
   const { data: nextReview } = useQuery({
     queryKey: ["vocab", "next-review"],
-    queryFn: async () => mockStore.nextReview(),
+    queryFn: () => api.nextReview(),
   })
   const { data: unreadArticle } = useQuery({
     queryKey: ["articles", "first-unread"],
-    queryFn: async () => mockStore.firstUnreadArticle(),
+    queryFn: () => api.firstUnreadArticle(),
+  })
+
+  const syncCooldownRemaining = Math.max(
+    0,
+    Math.ceil((cooldownUntil - now) / 1000)
+  )
+
+  useEffect(() => {
+    if (syncCooldownRemaining <= 0) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [syncCooldownRemaining])
+
+  const sync = useMutation({
+    mutationFn: () => api.syncMaimemo(),
+    meta: { silent: true },
+    onSuccess: (result) => {
+      setCooldownUntil(Date.now() + 30_000)
+      setNow(Date.now())
+      queryClient.invalidateQueries({ queryKey: ["vocab"] })
+      queryClient.invalidateQueries({ queryKey: ["generate"] })
+      toast.success(result.cached ? "同步结果已复用" : "同步完成", {
+        description: `${result.records_inserted} 新增，${result.records_updated} 更新。`,
+      })
+      if (result.warning) {
+        toast.warning("同步完成但有未取回记录", {
+          description: result.warning,
+        })
+      }
+    },
+    onError: (error) => {
+      toast.error("同步失败", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "请检查后端和 MAIMEMO_TOKEN。",
+      })
+    },
   })
 
   const total = summary?.total ?? 0
@@ -84,6 +128,9 @@ export function Dashboard() {
               progress={progress}
               unreadArticle={unreadArticle ?? null}
               isLoading={isSummaryPending}
+              isSyncing={sync.isPending}
+              syncCooldownRemaining={syncCooldownRemaining}
+              onSync={() => sync.mutate()}
             />
           </section>
 
@@ -173,13 +220,18 @@ function FirstRunCard() {
     <section className="space-y-6">
       <div className="rounded-3xl bg-card p-8 text-center ring-1 ring-foreground/5 sm:p-12">
         <div className="mx-auto mb-6 grid size-14 place-items-center rounded-3xl bg-foreground text-background">
-          <HugeiconsIcon icon={DashboardCircleIcon} size={22} strokeWidth={1.6} />
+          <HugeiconsIcon
+            icon={DashboardCircleIcon}
+            size={22}
+            strokeWidth={1.6}
+          />
         </div>
         <h2 className="font-heading text-2xl font-semibold tracking-tight">
           欢迎使用 LexiForge
         </h2>
         <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-          LexiForge 会从你的墨墨学习数据里挑出最薄弱的词，写一段带语境的英文短文，
+          LexiForge
+          会从你的墨墨学习数据里挑出最薄弱的词，写一段带语境的英文短文，
           帮你把零散的单词卡片串成可读的内容。
         </p>
         <div className="mx-auto mt-8 grid max-w-xl gap-3 text-left sm:grid-cols-3">
@@ -239,7 +291,9 @@ function StepCard({ step, title, desc, icon }: StepCardProps) {
         <HugeiconsIcon icon={icon} size={14} strokeWidth={1.8} />
       </div>
       <div className="mt-2 font-heading text-sm font-medium">{title}</div>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{desc}</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {desc}
+      </p>
     </div>
   )
 }

@@ -19,6 +19,7 @@ import {
   formatDifficulty,
   formatRelativeTime,
 } from "@/lib/formatters"
+import { api } from "@/lib/api"
 import { mockStore } from "@/lib/mock-data"
 import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
 import { withSim } from "@/lib/query-sim"
@@ -32,10 +33,7 @@ import type {
 import { ArticleBody } from "./components/ArticleBody"
 import { CoverageDrawer } from "./components/CoverageDrawer"
 import { FinishBar } from "./components/FinishBar"
-import {
-  MobileReadingBar,
-  ReadingToolbar,
-} from "./components/ReadingToolbar"
+import { MobileReadingBar, ReadingToolbar } from "./components/ReadingToolbar"
 import { ReadingProgress } from "./components/ReadingProgress"
 import { ReviewSheet } from "./components/ReviewSheet"
 import {
@@ -58,7 +56,7 @@ export function ArticleDetail() {
     refetch,
   } = useQuery({
     queryKey: ["articles", id],
-    queryFn: withSim(async () => mockStore.getArticle(id), { emptyValue: null }),
+    queryFn: withSim(() => api.getArticle(id), { emptyValue: null }),
     enabled: Boolean(id),
   })
 
@@ -66,11 +64,14 @@ export function ArticleDetail() {
   // synonyms / example_sentence / related articles that `article_words` lacks.
   const { data: words = [] } = useQuery({
     queryKey: ["vocab", "words"],
-    queryFn: async () => mockStore.listWords(),
+    queryFn: () => api.listWords(),
   })
   const wordIndex = useMemo(() => {
     const map = new Map<string, VocabWord>()
-    for (const w of words) map.set(w.id, w)
+    for (const w of words) {
+      map.set(w.id, w)
+      if (w.word_id) map.set(w.word_id, w)
+    }
     return map
   }, [words])
 
@@ -84,7 +85,7 @@ export function ArticleDetail() {
 
   const targets = useMemo(
     () => (article ? locatedTargets(article.article_words) : []),
-    [article],
+    [article]
   )
 
   // ---------- TTS ----------
@@ -96,7 +97,7 @@ export function ArticleDetail() {
 
   // ---------- mutations ----------
   const markRead = useMutation({
-    mutationFn: async (articleId: string) => mockStore.markArticleRead(articleId),
+    mutationFn: async (articleId: string) => api.markArticleRead(articleId),
     meta: { silent: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
@@ -105,19 +106,21 @@ export function ArticleDetail() {
 
   const markMastered = useMutation({
     mutationFn: async (word: { id: string; spelling: string }) => {
-      mockStore.markWordMastered(word.id, true)
+      api.markWordMastered(word.id, true)
       return word
     },
     meta: { silent: true },
     onSuccess: (word) => {
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
       toast("已标记为掌握", {
-        description: word.spelling ? `「${word.spelling}」从薄弱词移除` : undefined,
+        description: word.spelling
+          ? `「${word.spelling}」从薄弱词移除`
+          : undefined,
         duration: 6000,
         action: {
           label: "撤销",
           onClick: () => {
-            mockStore.markWordMastered(word.id, false)
+            api.markWordMastered(word.id, false)
             queryClient.invalidateQueries({ queryKey: ["vocab"] })
           },
         },
@@ -133,7 +136,7 @@ export function ArticleDetail() {
       id: string
       recognized: boolean
     }) => {
-      mockStore.markWordRecognized(id, recognized)
+      api.markWordRecognized(id, recognized)
       return { id, recognized }
     },
     meta: { silent: true },
@@ -144,8 +147,7 @@ export function ArticleDetail() {
 
   const regenerate = useMutation({
     mutationFn: async (source: ArticleDetailType) => {
-      await new Promise((r) => setTimeout(r, 700))
-      return mockStore.generateArticle({
+      return api.generateArticle({
         topic: source.topic,
         difficulty:
           source.difficulty === "B1-B2"
@@ -165,8 +167,7 @@ export function ArticleDetail() {
     },
     onError: (error) => {
       toast.error("重新生成失败", {
-        description:
-          error instanceof Error ? error.message : "请稍后再试。",
+        description: error instanceof Error ? error.message : "请稍后再试。",
       })
     },
   })
@@ -195,7 +196,7 @@ export function ArticleDetail() {
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) mark()
       },
-      { root: null, threshold: 0, rootMargin: "0px 0px -10% 0px" },
+      { root: null, threshold: 0, rootMargin: "0px 0px -10% 0px" }
     )
     io.observe(sentinel)
 
@@ -227,7 +228,7 @@ export function ArticleDetail() {
     el.classList.add("ring-2", "ring-offset-2", "ring-amber-400")
     window.setTimeout(
       () => el.classList.remove("ring-2", "ring-offset-2", "ring-amber-400"),
-      1400,
+      1400
     )
   }
 
@@ -243,17 +244,19 @@ export function ArticleDetail() {
   // Mirror the in-memory store into local state so we can re-render on
   // change without forcing a TanStack invalidation. Reset on article change
   // via the same render-time pattern so we don't pay an extra effect tick.
-  const [feedback, setFeedback] = useState<Record<number, ParagraphFeedbackValue>>(
-    () => (article ? mockStore.getParagraphFeedback(article.id) : {}),
+  const [feedback, setFeedback] = useState<
+    Record<number, ParagraphFeedbackValue>
+  >(() => (article ? mockStore.getParagraphFeedback(article.id) : {}))
+  const [feedbackArticleId, setFeedbackArticleId] = useState(
+    article?.id ?? null
   )
-  const [feedbackArticleId, setFeedbackArticleId] = useState(article?.id ?? null)
   if (article && article.id !== feedbackArticleId) {
     setFeedbackArticleId(article.id)
     setFeedback(mockStore.getParagraphFeedback(article.id))
   }
   const handleFeedbackChange = (
     paragraphIdx: number,
-    value: ParagraphFeedbackValue | null,
+    value: ParagraphFeedbackValue | null
   ) => {
     if (!article) return
     mockStore.setParagraphFeedback(article.id, paragraphIdx, value)
@@ -365,9 +368,7 @@ export function ArticleDetail() {
   const covered = article.article_words.filter((w) => w.is_covered)
 
   const masterAll = () => {
-    const toMaster = covered.filter(
-      (w) => !wordIndex.get(w.word_id)?.mastered,
-    )
+    const toMaster = covered.filter((w) => !wordIndex.get(w.word_id)?.mastered)
     if (toMaster.length === 0) {
       toast("这些词都已经掌握了", {
         description: "没有需要更新的状态。",
@@ -375,7 +376,7 @@ export function ArticleDetail() {
       return
     }
     for (const w of toMaster) {
-      mockStore.markWordMastered(w.word_id, true)
+      api.markWordMastered(w.word_id, true)
     }
     queryClient.invalidateQueries({ queryKey: ["vocab"] })
     toast("已批量标记已掌握", {
@@ -385,7 +386,7 @@ export function ArticleDetail() {
         label: "撤销",
         onClick: () => {
           for (const w of toMaster) {
-            mockStore.markWordMastered(w.word_id, false)
+            api.markWordMastered(w.word_id, false)
           }
           queryClient.invalidateQueries({ queryKey: ["vocab"] })
         },
@@ -417,7 +418,12 @@ export function ArticleDetail() {
       <ReadingProgress />
 
       <div className="mt-2 mb-2">
-        <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-2 text-muted-foreground"
+        >
           <Link to="/articles">
             <HugeiconsIcon
               icon={ArrowLeft01Icon}
@@ -466,7 +472,7 @@ export function ArticleDetail() {
           "mx-auto mt-4 w-full",
           // ~70ch reading width — leans on Tailwind's max-w-prose token but
           // matches the body's serif tone via a slightly tighter constraint.
-          "max-w-[70ch]",
+          "max-w-[70ch]"
         )}
       >
         <header className="space-y-3 py-2">
@@ -480,11 +486,17 @@ export function ArticleDetail() {
             <Badge variant="outline" className="text-[10px]">
               {formatArticleLength(article.article_length)}
             </Badge>
-            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span aria-hidden className="text-muted-foreground/40">
+              ·
+            </span>
             <span>{article.topic}</span>
-            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span aria-hidden className="text-muted-foreground/40">
+              ·
+            </span>
             <span>{formatRelativeTime(article.created_at)}</span>
-            <span aria-hidden className="text-muted-foreground/40">·</span>
+            <span aria-hidden className="text-muted-foreground/40">
+              ·
+            </span>
             <span className="inline-flex items-center gap-1">
               <HugeiconsIcon
                 icon={CheckmarkCircle02Icon}
@@ -508,7 +520,9 @@ export function ArticleDetail() {
           currentSentenceIdx={karaoke.currentSentenceIdx}
           feedback={feedback}
           onFeedbackChange={handleFeedbackChange}
-          onMaster={(wordId, spelling) => markMastered.mutate({ id: wordId, spelling })}
+          onMaster={(wordId, spelling) =>
+            markMastered.mutate({ id: wordId, spelling })
+          }
           onRecognize={(wordId, recognized) =>
             markRecognized.mutate({ id: wordId, recognized })
           }
@@ -591,7 +605,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
   return Boolean(
-    target.closest("input, textarea, select, [contenteditable='true']"),
+    target.closest("input, textarea, select, [contenteditable='true']")
   )
 }
 

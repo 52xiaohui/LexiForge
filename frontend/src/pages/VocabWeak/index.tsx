@@ -52,7 +52,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatDateShort } from "@/lib/formatters"
-import { mockStore } from "@/lib/mock-data"
+import { api } from "@/lib/api"
 import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
 import type { LastResponse, VocabWord } from "@/types/api"
@@ -73,9 +73,14 @@ export function VocabWeak() {
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
-  const { data = [], isPending, isError, refetch } = useQuery({
+  const {
+    data = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["vocab", "weak"],
-    queryFn: withSim(async () => mockStore.listWeakWords(), { emptyValue: [] }),
+    queryFn: withSim(() => api.listWeakWords(), { emptyValue: [] }),
   })
 
   const removeFromSelection = (id: string) => {
@@ -89,7 +94,7 @@ export function VocabWeak() {
 
   const markMastered = useMutation({
     mutationFn: async (word: VocabWord) => {
-      mockStore.markWordMastered(word.id, true)
+      api.markWordMastered(word.id, true)
       return word
     },
     meta: { silent: true },
@@ -102,7 +107,7 @@ export function VocabWeak() {
         action: {
           label: "撤销",
           onClick: () => {
-            mockStore.markWordMastered(word.id, false)
+            api.markWordMastered(word.id, false)
             queryClient.invalidateQueries({ queryKey: ["vocab"] })
           },
         },
@@ -112,7 +117,7 @@ export function VocabWeak() {
 
   const ignoreWord = useMutation({
     mutationFn: async (word: VocabWord) => {
-      mockStore.toggleWordIgnored(word.id, true)
+      api.markWordMastered(word.id, true)
       return word
     },
     meta: { silent: true },
@@ -125,7 +130,7 @@ export function VocabWeak() {
         action: {
           label: "撤销",
           onClick: () => {
-            mockStore.toggleWordIgnored(word.id, false)
+            api.markWordMastered(word.id, false)
             queryClient.invalidateQueries({ queryKey: ["vocab"] })
           },
         },
@@ -391,7 +396,7 @@ export function VocabWeak() {
               "pointer-events-auto flex w-full max-w-3xl items-center gap-3 rounded-3xl border bg-background/95 p-3 pl-5 shadow-lg ring-1 backdrop-blur supports-backdrop-filter:bg-background/70",
               overLimit
                 ? "border-destructive/40 ring-destructive/20"
-                : "border-border/60 ring-foreground/5",
+                : "border-border/60 ring-foreground/5"
             )}
           >
             <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
@@ -402,7 +407,8 @@ export function VocabWeak() {
                 className={cn(overLimit && "text-destructive")}
               />
               <span className="truncate">
-                已勾选 <strong className="tabular-nums">{selectedCount}</strong> 个词
+                已勾选 <strong className="tabular-nums">{selectedCount}</strong>{" "}
+                个词
                 {overLimit && (
                   <span className="text-destructive">
                     {" "}
@@ -446,7 +452,9 @@ function SortButton({
       onClick={onClick}
       className={cn(
         "inline-flex items-center gap-1 text-left text-xs tracking-wider uppercase transition-colors",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        active
+          ? "text-foreground"
+          : "text-muted-foreground hover:text-foreground"
       )}
     >
       <span>{label}</span>
@@ -469,7 +477,13 @@ interface WordRowProps {
   onIgnore: () => void
 }
 
-function WordTableRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowProps) {
+function WordTableRow({
+  word,
+  selected,
+  onToggle,
+  onMaster,
+  onIgnore,
+}: WordRowProps) {
   const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <TableRow
@@ -498,7 +512,7 @@ function WordTableRow({ word, selected, onToggle, onMaster, onIgnore }: WordRowP
       <TableCell>
         <WeakScoreMeter score={word.weak_score} />
       </TableCell>
-      <TableCell className="text-sm tabular-nums text-muted-foreground">
+      <TableCell className="text-sm text-muted-foreground tabular-nums">
         {word.study_count}
       </TableCell>
       <TableCell className="text-sm tabular-nums">
@@ -566,8 +580,8 @@ function WordCardRow({
         }
       }}
       className={cn(
-        "flex gap-3 p-4 transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:-outline-offset-2",
-        selected ? "bg-muted/60" : "bg-card hover:bg-muted/30",
+        "flex gap-3 p-4 transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:-outline-offset-2 focus-visible:outline-none",
+        selected ? "bg-muted/60" : "bg-card hover:bg-muted/30"
       )}
     >
       <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
@@ -610,7 +624,9 @@ function WordCardRow({
           </span>
           {word.next_study_date && (
             <>
-              <span aria-hidden className="text-muted-foreground">·</span>
+              <span aria-hidden className="text-muted-foreground">
+                ·
+              </span>
               <span className="text-muted-foreground">
                 下次 {formatDateShort(word.next_study_date)}
               </span>
@@ -694,7 +710,9 @@ function RowActions({ spelling, onMaster, onIgnore }: RowActionsProps) {
           <AlertDialogHeader>
             {confirm === "master" ? (
               <>
-                <AlertDialogTitle>把「{spelling}」标记为已掌握？</AlertDialogTitle>
+                <AlertDialogTitle>
+                  把「{spelling}」标记为已掌握？
+                </AlertDialogTitle>
                 <AlertDialogDescription>
                   它会从薄弱词列表消失，下次生成文章也不再优先挑选。
                   稍后可以在「全部单词」里改回来。

@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/table"
 import { formatDateShort } from "@/lib/formatters"
 import { masteryTierFor, type MasteryTierId } from "@/lib/mastery"
-import { mockStore } from "@/lib/mock-data"
+import { api } from "@/lib/api"
 import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
 import type { LastResponse, VocabWord } from "@/types/api"
@@ -56,9 +56,14 @@ export function Vocab() {
   const [masteryFilter, setMasteryFilter] = useState<MasteryFilter>("ALL")
   const [page, setPage] = useState(1)
 
-  const { data = [], isPending, isError, refetch } = useQuery({
+  const {
+    data = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["vocab", "words"],
-    queryFn: withSim(async () => mockStore.listWords(), { emptyValue: [] }),
+    queryFn: withSim(() => api.listWords(), { emptyValue: [] }),
   })
 
   // Distribution by mastery tier across the whole library — gives the page its
@@ -71,26 +76,31 @@ export function Vocab() {
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
-    return data
-      .filter((w) => {
-        if (responseFilter !== "ALL" && w.last_response !== responseFilter) {
-          return false
-        }
-        if (
-          masteryFilter !== "ALL" &&
-          masteryTierFor(w.mastery_score) !== masteryFilter
-        ) {
-          return false
-        }
-        if (!query) return true
-        return (
-          w.spelling.toLowerCase().includes(query) ||
-          w.translation.toLowerCase().includes(query)
+    return (
+      data
+        .filter((w) => {
+          if (responseFilter !== "ALL" && w.last_response !== responseFilter) {
+            return false
+          }
+          if (
+            masteryFilter !== "ALL" &&
+            masteryTierFor(w.mastery_score) !== masteryFilter
+          ) {
+            return false
+          }
+          if (!query) return true
+          return (
+            w.spelling.toLowerCase().includes(query) ||
+            w.translation.toLowerCase().includes(query)
+          )
+        })
+        // Lead with the most-mastered words: 全部单词 reads as a progress overview,
+        // distinct from 薄弱词 which surfaces the weakest first.
+        .sort(
+          (a, b) =>
+            b.mastery_score - a.mastery_score || b.weak_score - a.weak_score
         )
-      })
-      // Lead with the most-mastered words: 全部单词 reads as a progress overview,
-      // distinct from 薄弱词 which surfaces the weakest first.
-      .sort((a, b) => b.mastery_score - a.mastery_score || b.weak_score - a.weak_score)
+    )
   }, [data, search, responseFilter, masteryFilter])
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
@@ -140,10 +150,7 @@ export function Vocab() {
 
       <div className="flex flex-wrap gap-2">
         {MASTERY_CHIPS.map((chip) => {
-          const count =
-            chip.id === "ALL"
-              ? data.length
-              : tierCounts[chip.id]
+          const count = chip.id === "ALL" ? data.length : tierCounts[chip.id]
           const active = masteryFilter === chip.id
           return (
             <button
@@ -158,7 +165,7 @@ export function Vocab() {
                 "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors",
                 active
                   ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-border/60 text-muted-foreground hover:bg-muted/50",
+                  : "border-border/60 text-muted-foreground hover:bg-muted/50"
               )}
             >
               <span>{chip.label}</span>
@@ -169,7 +176,7 @@ export function Vocab() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-muted/30 p-3">
-        <div className="relative flex-1 min-w-56">
+        <div className="relative min-w-56 flex-1">
           <HugeiconsIcon
             icon={Search01Icon}
             size={14}
@@ -238,7 +245,9 @@ export function Vocab() {
               pageItems.map((word) => (
                 <TableRow key={word.id}>
                   <TableCell className="pl-4">
-                    <div className="font-heading text-sm font-medium">{word.spelling}</div>
+                    <div className="font-heading text-sm font-medium">
+                      {word.spelling}
+                    </div>
                   </TableCell>
                   <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
                     {word.translation}
@@ -249,17 +258,20 @@ export function Vocab() {
                   <TableCell>
                     <MasteryMeter score={word.mastery_score} />
                   </TableCell>
-                  <TableCell className="text-sm tabular-nums text-muted-foreground">
+                  <TableCell className="text-sm text-muted-foreground tabular-nums">
                     {word.study_count}
                   </TableCell>
                   <TableCell>
                     {word.tags.includes("STICKING") && (
-                      <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                      <Badge
+                        variant="outline"
+                        className="h-5 px-1.5 text-[10px]"
+                      >
                         反复忘
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="pr-4 text-right text-xs tabular-nums text-muted-foreground">
+                  <TableCell className="pr-4 text-right text-xs text-muted-foreground tabular-nums">
                     {formatDateShort(word.next_study_date)}
                   </TableCell>
                 </TableRow>
@@ -339,7 +351,9 @@ function WordCard({ word }: { word: VocabWord }) {
             反复忘
           </Badge>
         )}
-        <span className="text-muted-foreground">练习 {word.study_count} 次</span>
+        <span className="text-muted-foreground">
+          练习 {word.study_count} 次
+        </span>
         {word.next_study_date && (
           <>
             <span aria-hidden className="text-muted-foreground">

@@ -39,6 +39,8 @@ export interface TodayProgress {
 /** Full vocabulary record for /vocab. */
 export interface VocabWord {
   id: string
+  /** Backend vocab_words id. `id` remains the study_records id for generation selection. */
+  word_id?: string
   spelling: string
   translation: string
   last_response: LastResponse
@@ -97,6 +99,18 @@ export interface ArticleWord {
   /** Code-point length. */
   char_length: number
   is_covered: boolean
+}
+
+export interface SyncResult {
+  status: string
+  records_total: number
+  records_fetched?: number
+  records_unavailable?: number
+  records_inserted: number
+  records_updated: number
+  duration_ms: number
+  cached?: boolean
+  warning?: string
 }
 
 /** Full article detail as returned by GET /articles/:id. */

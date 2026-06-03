@@ -29,44 +29,36 @@ import {
   formatDifficulty,
   formatRelativeTime,
 } from "@/lib/formatters"
-import { mockStore } from "@/lib/mock-data"
+import { api } from "@/lib/api"
 import { withSim } from "@/lib/query-sim"
-import type { ArticleDetail } from "@/types/api"
+import type { Article } from "@/types/api"
 
 export function Articles() {
   const queryClient = useQueryClient()
-  const { data = [], isPending, isError, refetch } = useQuery({
+  const {
+    data = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["articles", "list"],
-    queryFn: withSim(async () => mockStore.listArticles(), { emptyValue: [] }),
+    queryFn: withSim(() => api.listArticles(), { emptyValue: [] }),
   })
 
   const deleteArticle = useMutation({
-    mutationFn: async (id: string): Promise<ArticleDetail> => {
-      const removed = mockStore.deleteArticle(id)
-      if (!removed) throw new Error("该文章已不存在")
-      return removed
+    mutationFn: async (article: Article): Promise<Article> => {
+      await api.deleteArticle(article.id)
+      return article
     },
     // Status-card-less surface — own the feedback via sonner.
     meta: { silent: true },
     onSuccess: (detail) => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
-      toast("已删除文章", {
-        description: `《${detail.title}》`,
-        duration: 6000,
-        action: {
-          label: "撤销",
-          onClick: () => {
-            mockStore.restoreArticle(detail)
-            queryClient.invalidateQueries({ queryKey: ["articles"] })
-            toast.success("已撤销删除")
-          },
-        },
-      })
+      toast("已删除文章", { description: `《${detail.title}》` })
     },
     onError: (error) => {
       toast.error("删除失败", {
-        description:
-          error instanceof Error ? error.message : "请稍后再试。",
+        description: error instanceof Error ? error.message : "请稍后再试。",
       })
     },
   })
@@ -135,7 +127,7 @@ export function Articles() {
               className="min-w-0 flex-1 space-y-2"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <div className="font-heading text-base font-medium leading-snug group-hover:underline">
+                <div className="font-heading text-base leading-snug font-medium group-hover:underline">
                   {article.title}
                 </div>
               </div>
@@ -173,15 +165,16 @@ export function Articles() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>删除这篇文章？</AlertDialogTitle>
                   <AlertDialogDescription>
-                    《{article.title}》将从历史中移除，操作不可撤销。
-                    （MVP 阶段删除是前端原型，真实 API 接入后会调用 DELETE /articles/:id。）
+                    《{article.title}》将从历史中移除，操作不可撤销。 （MVP
+                    阶段删除是前端原型，真实 API 接入后会调用 DELETE
+                    /articles/:id。）
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>取消</AlertDialogCancel>
                   <AlertDialogAction
                     variant="destructive"
-                    onClick={() => deleteArticle.mutate(article.id)}
+                    onClick={() => deleteArticle.mutate(article)}
                   >
                     删除
                   </AlertDialogAction>
