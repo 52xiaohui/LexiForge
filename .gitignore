@@ -9,6 +9,7 @@ Desktop.ini
 
 # Per-developer AI runtime state (never commit) -------------------------------
 .claude/settings.local.json
+.codex-run/
 
 # Local skill/reference folder -------------------------------------------------
 memo-api/
