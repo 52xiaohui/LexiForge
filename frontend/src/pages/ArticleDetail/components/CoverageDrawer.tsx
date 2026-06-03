@@ -16,11 +16,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import {
-  formatArticleLength,
-  formatCoverage,
-  formatDifficulty,
-} from "@/lib/formatters"
 import { cn } from "@/lib/utils"
 import type { ArticleDetail, ArticleWord, VocabWord } from "@/types/api"
 
@@ -36,12 +31,10 @@ export interface CoverageDrawerProps {
 }
 
 /**
- * Floating drawer that hosts everything that used to live in the fixed
- * sidebar — coverage card, hit / missed word lists, and article metadata.
- *
- * Replacing the fixed `lg:col-span-2` sidebar with a `Sheet` lets the article
- * column stay centered on every breakpoint and the same component serve both
- * desktop (right slide-in) and mobile (right slide-in over the body).
+ * Floating drawer listing the article's target words. Tapping a row jumps to
+ * the word in the article; trailing actions speak / mark recognized / mark
+ * mastered. Coverage % already lives in the article header, so it is not
+ * repeated here.
  */
 export function CoverageDrawer({
   open,
@@ -62,49 +55,45 @@ export function CoverageDrawer({
         side="right"
         className="w-full max-w-md overflow-y-auto p-0"
       >
-        <SheetHeader className="gap-2 border-b border-border/60">
-          <SheetTitle>本文词汇</SheetTitle>
+        <SheetHeader className="gap-1 border-b border-border/60">
+          <SheetTitle>本文目标词</SheetTitle>
           <SheetDescription>
-            {covered.length} 命中 · {uncovered.length} 漏掉
+            命中 {article.covered_word_count}/{article.target_word_count}
+            {uncovered.length > 0 && ` · ${uncovered.length} 个没写进文章`}
           </SheetDescription>
         </SheetHeader>
 
         <div className="space-y-5 px-6 py-5">
-          <CoverageBlock article={article} />
-
           {covered.length > 0 && (
-            <section className="space-y-2">
-              <SectionLabel>命中的目标词</SectionLabel>
-              <ul className="space-y-1.5 text-sm">
-                {covered.map((w) => (
-                  <WordListRow
-                    key={w.word_id}
-                    aw={w}
-                    word={wordIndex.get(w.word_id) ?? null}
-                    onScrollTo={() => {
-                      onScrollTo(w.word_id)
-                      onOpenChange(false)
-                    }}
-                    onMaster={() => onMaster(w.word_id, w.spelling)}
-                    onRecognize={(value) => onRecognize(w.word_id, value)}
-                    onSpeak={() => onSpeak(w.spelling)}
-                  />
-                ))}
-              </ul>
-            </section>
+            <ul className="space-y-1.5 text-sm">
+              {covered.map((w) => (
+                <WordListRow
+                  key={w.word_id}
+                  aw={w}
+                  word={wordIndex.get(w.word_id) ?? null}
+                  onScrollTo={() => {
+                    onScrollTo(w.word_id)
+                    onOpenChange(false)
+                  }}
+                  onMaster={() => onMaster(w.word_id, w.spelling)}
+                  onRecognize={(value) => onRecognize(w.word_id, value)}
+                  onSpeak={() => onSpeak(w.spelling)}
+                />
+              ))}
+            </ul>
           )}
 
           {uncovered.length > 0 && (
             <section className="space-y-2">
               <Separator />
-              <SectionLabel className="text-destructive">
+              <SectionLabel>
                 <span className="inline-flex items-center gap-1">
                   <HugeiconsIcon
                     icon={AlertCircleIcon}
                     size={12}
                     strokeWidth={1.8}
                   />
-                  AI 没写进文章的目标词
+                  没写进文章的目标词
                 </span>
               </SectionLabel>
               <ul className="space-y-1 text-sm">
@@ -125,50 +114,9 @@ export function CoverageDrawer({
               </p>
             </section>
           )}
-
-          <Separator />
-
-          <section className="space-y-2">
-            <SectionLabel>文章参数</SectionLabel>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <Info label="主题" value={article.topic} />
-              <Info label="难度" value={formatDifficulty(article.difficulty)} />
-              <Info
-                label="长度"
-                value={formatArticleLength(article.article_length)}
-              />
-              <Info
-                label="目标词数"
-                value={String(article.target_word_count)}
-              />
-            </div>
-          </section>
         </div>
       </SheetContent>
     </Sheet>
-  )
-}
-
-function CoverageBlock({ article }: { article: ArticleDetail }) {
-  return (
-    <div className="rounded-2xl border border-border/60 p-4">
-      <div className="flex items-end gap-2">
-        <div className="font-heading text-3xl font-semibold tabular-nums">
-          {formatCoverage(article.coverage_rate)}
-        </div>
-        <div className="pb-1 text-xs text-muted-foreground">
-          {article.covered_word_count} / {article.target_word_count} 词命中
-        </div>
-      </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className="h-full bg-foreground"
-          style={{
-            width: `${Math.min(100, Math.round(article.coverage_rate * 100))}%`,
-          }}
-        />
-      </div>
-    </div>
   )
 }
 
@@ -187,17 +135,6 @@ function SectionLabel({
       )}
     >
       {children}
-    </div>
-  )
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] tracking-wider text-muted-foreground uppercase">
-        {label}
-      </span>
-      <span className="truncate">{value}</span>
     </div>
   )
 }
@@ -229,30 +166,32 @@ function WordListRow({
       <button
         type="button"
         onClick={onScrollTo}
-        className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
       >
-        <span className="font-heading text-sm font-medium">{aw.spelling}</span>
-        <span className="truncate text-xs text-muted-foreground">
-          {aw.translation}
+        <span className="flex items-baseline gap-2">
+          <span className="font-heading text-sm font-medium">
+            {aw.spelling}
+          </span>
+          {tier === "mastered" && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
+            >
+              已掌握
+            </Badge>
+          )}
+          {tier === "recognized" && (
+            <Badge
+              variant="outline"
+              className="border-sky-500/30 text-[10px] text-sky-600 dark:text-sky-400"
+            >
+              认得
+            </Badge>
+          )}
         </span>
-        {tier === "mastered" && (
-          <Badge
-            variant="outline"
-            className="border-emerald-500/30 text-[10px] text-emerald-600 dark:text-emerald-400"
-          >
-            已掌握
-          </Badge>
-        )}
-        {tier === "recognized" && (
-          <Badge
-            variant="outline"
-            className="border-sky-500/30 text-[10px] text-sky-600 dark:text-sky-400"
-          >
-            认得
-          </Badge>
-        )}
+        <span className="text-xs text-muted-foreground">{aw.translation}</span>
       </button>
-      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover/item:opacity-100 focus-within:opacity-100">
+      <div className="flex items-center gap-1 transition-opacity group-hover/item:opacity-100 focus-within:opacity-100 [@media(hover:hover)]:opacity-0">
         <Button
           variant="ghost"
           size="icon-xs"
