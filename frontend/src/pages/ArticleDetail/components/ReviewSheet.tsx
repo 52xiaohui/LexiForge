@@ -91,7 +91,7 @@ export function ReviewSheet({
         <SheetHeader className="gap-2 border-b border-border/60">
           <SheetTitle>回顾 · {article.title}</SheetTitle>
           <SheetDescription>
-            读完一篇之后再过一遍最值的——只看含目标词的句子，再用闪卡逐个回忆。
+            读完一篇，再把重点过一遍——只看含目标词的句子，用闪卡逐个回忆。
           </SheetDescription>
           <div className="flex gap-1 pt-2">
             <TabButton
