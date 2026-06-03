@@ -11,6 +11,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	weakListMinWeakScore = 50
+	weakListMaxMastery   = 60
+)
+
 // Repository owns the GORM access for vocab_words and study_records.
 //
 // MVP keeps this empty; once sync lands the upsert / scoring queries live
@@ -116,7 +121,7 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 	if err := r.db.Model(&StudyRecord{}).Where("user_id = ?", userID).Count(&summary.Total).Error; err != nil {
 		return Summary{}, err
 	}
-	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND weak_score >= ?", userID, 80).Count(&summary.WeakCount).Error; err != nil {
+	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND (weak_score >= ? OR mastery_score < ?)", userID, weakListMinWeakScore, weakListMaxMastery).Count(&summary.WeakCount).Error; err != nil {
 		return Summary{}, err
 	}
 	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND tags @> ?::jsonb", userID, `["STICKING"]`).Count(&summary.StickingCount).Error; err != nil {
@@ -171,7 +176,7 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 		query = query.Where("sr.weak_score >= ?", *opts.MinWeakScore)
 	}
 	if opts.WeakOnly && opts.MinWeakScore == nil {
-		query = query.Where("sr.weak_score >= ?", 80)
+		query = query.Where("(sr.weak_score >= ? OR sr.mastery_score < ?)", weakListMinWeakScore, weakListMaxMastery)
 	}
 	return query
 }

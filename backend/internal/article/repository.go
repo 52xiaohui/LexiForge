@@ -88,6 +88,11 @@ type ArticleListResult struct {
 
 var ErrArticleNotFound = errors.New("article not found")
 
+const (
+	autoPickMinWeakScore = 50
+	autoPickMaxMastery   = 60
+)
+
 func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, selectedIDs []uuid.UUID, targetCount int) ([]TargetWordRecord, error) {
 	selected := make([]TargetWordRecord, 0, len(selectedIDs))
 	seenWords := map[uuid.UUID]struct{}{}
@@ -125,7 +130,7 @@ func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, se
 		args  []any
 		limit int
 	}{
-		{where: "sr.weak_score >= ?", args: []any{80}, limit: quota(targetCount, 70) - len(targets)},
+		{where: "(sr.weak_score >= ? OR sr.mastery_score < ?)", args: []any{autoPickMinWeakScore, autoPickMaxMastery}, limit: quota(targetCount, 70) - len(targets)},
 		{where: "sr.mastery_score BETWEEN ? AND ?", args: []any{45, 80}, limit: quota(targetCount, 20)},
 		{where: "sr.last_study_date IS NOT NULL", limit: targetCount},
 		{where: "1 = 1", limit: targetCount},

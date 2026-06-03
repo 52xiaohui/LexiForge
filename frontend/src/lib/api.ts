@@ -20,6 +20,8 @@ const API_BASE_URL =
 const hiddenWordIds = new Set<string>()
 const recognizedWordIds = new Set<string>()
 const readArticleIds = new Set<string>()
+const WEAK_POOL_MIN_WEAK_SCORE = 50
+const WEAK_POOL_MAX_MASTERY = 60
 
 interface APIErrorBody {
   code?: string
@@ -209,8 +211,15 @@ function buildGenerationPreview(
     .filter((w): w is VocabWord => Boolean(w))
   const seen = new Set(selected.map((w) => w.id))
   const pool = words
-    .filter((w) => !seen.has(w.id) && w.weak_score >= 80)
-    .sort((a, b) => b.weak_score - a.weak_score)
+    .filter(
+      (w) =>
+        !seen.has(w.id) &&
+        (w.weak_score >= WEAK_POOL_MIN_WEAK_SCORE ||
+          w.mastery_score < WEAK_POOL_MAX_MASTERY)
+    )
+    .sort(
+      (a, b) => b.weak_score - a.weak_score || a.mastery_score - b.mastery_score
+    )
   const plan = [...selected, ...pool].slice(0, targetCount)
 
   const counts: Record<LastResponse, number> = {
