@@ -6,6 +6,7 @@ import type {
   GenerateArticleInput,
   GenerationPreview,
   LastResponse,
+  MasteryTierId,
   Page,
   SyncResult,
   TodayProgress,
@@ -46,7 +47,11 @@ interface BackendVocabRecord {
 interface BackendVocabSummary {
   total: number
   weak_count: number
+  sticking_count?: number
+  by_last_response?: Partial<Record<LastResponse, number>>
+  by_mastery_tier?: Record<MasteryTierId, number>
   latest_synced_at: string | null
+  next_study_due_count?: number
 }
 
 interface BackendArticleListItem {
@@ -192,6 +197,64 @@ async function listWords(
   })
 }
 
+export type VocabSort =
+  | "spelling"
+  | "-spelling"
+  | "mastery_score"
+  | "-mastery_score"
+  | "study_count"
+  | "-study_count"
+  | "last_study_date"
+  | "-last_study_date"
+  | "next_study_date"
+  | "-next_study_date"
+  | "weak_score"
+  | "-weak_score"
+
+export interface VocabPageParams {
+  page: number
+  pageSize: number
+  search?: string
+  lastResponse?: LastResponse | "ALL"
+  tag?: string
+  minWeakScore?: number
+  masteryTier?: MasteryTierId | "ALL"
+  sort?: VocabSort
+}
+
+async function listWordsPage(
+  endpoint: "/vocab/records" | "/vocab/weak",
+  params: VocabPageParams
+): Promise<Page<VocabWord>> {
+  const query = new URLSearchParams({
+    page: String(params.page),
+    page_size: String(params.pageSize),
+  })
+  const search = params.search?.trim()
+  if (search) query.set("search", search)
+  if (params.lastResponse && params.lastResponse !== "ALL") {
+    query.set("last_response", params.lastResponse)
+  }
+  if (params.tag) query.set("tag", params.tag)
+  if (params.minWeakScore != null) {
+    query.set("min_weak_score", String(params.minWeakScore))
+  }
+  if (params.masteryTier && params.masteryTier !== "ALL") {
+    query.set("mastery_tier", params.masteryTier)
+  }
+  if (params.sort) query.set("sort", params.sort)
+
+  const page = await request<Page<BackendVocabRecord>>(
+    `${endpoint}?${query.toString()}`
+  )
+  return {
+    ...page,
+    items: page.items.map(mapWord).filter((w) => {
+      return !hiddenWordIds.has(w.id) && !hiddenWordIds.has(w.word_id ?? "")
+    }),
+  }
+}
+
 async function articleCreatedAtFromList(
   id: string
 ): Promise<string | undefined> {
@@ -250,6 +313,10 @@ export const api = {
       total: summary.total,
       weak: summary.weak_count,
       last_synced_at: summary.latest_synced_at,
+      sticking_count: summary.sticking_count,
+      by_last_response: summary.by_last_response,
+      by_mastery_tier: summary.by_mastery_tier,
+      next_study_due_count: summary.next_study_due_count,
     }
   },
 
@@ -261,13 +328,25 @@ export const api = {
     return listWords("/vocab/records")
   },
 
+  async listWordsPage(params: VocabPageParams): Promise<Page<VocabWord>> {
+    return listWordsPage("/vocab/records", params)
+  },
+
   async listWeakWords(): Promise<VocabWord[]> {
     return listWords("/vocab/weak")
   },
 
+  async listWeakWordsPage(params: VocabPageParams): Promise<Page<VocabWord>> {
+    return listWordsPage("/vocab/weak", params)
+  },
+
   async nextReview(limit = 5): Promise<VocabWord[]> {
-    const words = await api.listWeakWords()
-    return words.slice(0, limit)
+    const page = await api.listWeakWordsPage({
+      page: 1,
+      pageSize: limit,
+      sort: "-weak_score",
+    })
+    return page.items
   },
 
   async listRecentArticles(limit = 5): Promise<Article[]> {

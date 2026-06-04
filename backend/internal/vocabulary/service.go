@@ -28,9 +28,11 @@ var (
 type Query struct {
 	Page         int
 	PageSize     int
+	Search       string
 	LastResponse string
 	Tag          string
 	MinWeakScore *int
+	MasteryTier  string
 	Sort         string
 }
 
@@ -109,9 +111,11 @@ func (s *Service) list(q Query, weakOnly bool) (PagedRecords, error) {
 		UserID:       userID,
 		Page:         normalized.Page,
 		PageSize:     normalized.PageSize,
+		Search:       normalized.Search,
 		LastResponse: normalized.LastResponse,
 		Tag:          normalized.Tag,
 		MinWeakScore: normalized.MinWeakScore,
+		MasteryTier:  normalized.MasteryTier,
 		WeakOnly:     weakOnly,
 		Sort:         normalized.Sort,
 	})
@@ -152,7 +156,14 @@ func normalizeQuery(q Query) (Query, error) {
 	if q.MinWeakScore != nil && *q.MinWeakScore < 0 {
 		return Query{}, fmt.Errorf("%w: min_weak_score must be >= 0", ErrInvalidQuery)
 	}
+	q.Search = strings.TrimSpace(q.Search)
 	q.Tag = strings.ToUpper(strings.TrimSpace(q.Tag))
+	q.MasteryTier = strings.ToLower(strings.TrimSpace(q.MasteryTier))
+	switch q.MasteryTier {
+	case "", "mastered", "learning", "starting":
+	default:
+		return Query{}, fmt.Errorf("%w: unsupported mastery_tier", ErrInvalidQuery)
+	}
 	return q, nil
 }
 

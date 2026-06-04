@@ -23,6 +23,10 @@ export interface VocabSummary {
   total: number
   weak: number
   last_synced_at: string | null
+  sticking_count?: number
+  next_study_due_count?: number
+  by_last_response?: Partial<Record<LastResponse, number>>
+  by_mastery_tier?: Record<MasteryTierId, number>
   /** Trend vs last week, drives the Dashboard total-words StatCard. */
   total_trend?: Trend
   /** Trend vs last week, drives the Dashboard weak-words StatCard. */
@@ -73,6 +77,8 @@ export interface VocabWord {
 
 /** Weak word — same shape as VocabWord but with guaranteed weak_score. */
 export type WeakWord = VocabWord
+
+export type MasteryTierId = "mastered" | "learning" | "starting"
 
 /** Article list item (no body). */
 export interface Article {

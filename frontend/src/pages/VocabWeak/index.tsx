@@ -8,8 +8,12 @@ import {
   ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueryClient,
+} from "@tanstack/react-query"
+import { memo, useCallback, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -53,8 +57,10 @@ import {
 } from "@/components/ui/table"
 import { formatDateShort } from "@/lib/formatters"
 import { api } from "@/lib/api"
+import type { VocabSort } from "@/lib/api"
 import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import type { LastResponse, VocabWord } from "@/types/api"
 
 type ResponseFilter = "ALL" | LastResponse
@@ -62,6 +68,17 @@ type SortBy = "weak_score" | "study_count" | "recently_covered_count"
 type SortDir = "asc" | "desc"
 
 const MAX_SELECTION = 80
+const PAGE_SIZE = 50
+
+function sortParam(sortBy: SortBy, sortDir: SortDir): VocabSort | undefined {
+  if (sortBy === "weak_score") {
+    return sortDir === "desc" ? "-weak_score" : "weak_score"
+  }
+  if (sortBy === "study_count") {
+    return sortDir === "desc" ? "-study_count" : "study_count"
+  }
+  return undefined
+}
 
 export function VocabWeak() {
   const navigate = useNavigate()
@@ -72,25 +89,70 @@ export function VocabWeak() {
   const [sortBy, setSortBy] = useState<SortBy>("weak_score")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [pendingAction, setPendingAction] = useState<{
+    type: "master" | "ignore"
+    word: VocabWord
+  } | null>(null)
+  const isDesktop = useMediaQuery("(min-width: 768px)")
 
   const {
-    data = [],
+    data,
     isPending,
     isError,
     refetch,
-  } = useQuery({
-    queryKey: ["vocab", "weak"],
-    queryFn: withSim(() => api.listWeakWords(), { emptyValue: [] }),
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: [
+      "vocab",
+      "weak",
+      PAGE_SIZE,
+      responseFilter,
+      stickingOnly,
+      sortBy,
+      sortDir,
+    ],
+    queryFn: async ({ pageParam = 1 }) =>
+      withSim(
+        () =>
+          api.listWeakWordsPage({
+            page: pageParam,
+            pageSize: PAGE_SIZE,
+            lastResponse: responseFilter,
+            tag: stickingOnly ? "STICKING" : undefined,
+            sort: sortParam(sortBy, sortDir),
+          }),
+        {
+          emptyValue: {
+            items: [],
+            total: 0,
+            page: pageParam,
+            page_size: PAGE_SIZE,
+          },
+        }
+      )(),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => {
+      const loaded = lastPage.page * lastPage.page_size
+      return loaded < lastPage.total ? lastPage.page + 1 : undefined
+    },
   })
 
-  const removeFromSelection = (id: string) => {
+  const loadedWords = useMemo(
+    () => data?.pages.flatMap((page) => page.items) ?? [],
+    [data]
+  )
+  const total = data?.pages[0]?.total ?? 0
+
+  const removeFromSelection = useCallback((id: string) => {
     setSelected((prev) => {
       if (!prev.has(id)) return prev
       const copy = new Set(prev)
       copy.delete(id)
       return copy
     })
-  }
+  }, [])
 
   const markMastered = useMutation({
     mutationFn: async (word: VocabWord) => {
@@ -100,6 +162,7 @@ export function VocabWeak() {
     meta: { silent: true },
     onSuccess: (word) => {
       removeFromSelection(word.id)
+      setPendingAction(null)
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
       toast("已标记为掌握", {
         description: `「${word.spelling}」从薄弱词中移除`,
@@ -123,6 +186,7 @@ export function VocabWeak() {
     meta: { silent: true },
     onSuccess: (word) => {
       removeFromSelection(word.id)
+      setPendingAction(null)
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
       toast("已忽略", {
         description: `「${word.spelling}」下次同步前不再出现`,
@@ -139,54 +203,61 @@ export function VocabWeak() {
   })
 
   const visible = useMemo(() => {
-    let rows = data.slice()
-    if (responseFilter !== "ALL") {
-      rows = rows.filter((w) => w.last_response === responseFilter)
-    }
-    if (stickingOnly) {
-      rows = rows.filter((w) => w.tags.includes("STICKING"))
-    }
+    let rows = loadedWords.slice()
     if (hideRecentlyCovered) {
       rows = rows.filter((w) => (w.recently_covered_count ?? 0) === 0)
     }
-    rows.sort((a, b) => {
-      const av = (a[sortBy] as number | undefined) ?? 0
-      const bv = (b[sortBy] as number | undefined) ?? 0
-      const diff = av - bv
-      return sortDir === "desc" ? -diff : diff
-    })
+    if (sortBy === "recently_covered_count") {
+      rows.sort((a, b) => {
+        const av = a.recently_covered_count ?? 0
+        const bv = b.recently_covered_count ?? 0
+        const diff = av - bv
+        return sortDir === "desc" ? -diff : diff
+      })
+    }
     return rows
-  }, [data, responseFilter, stickingOnly, hideRecentlyCovered, sortBy, sortDir])
+  }, [loadedWords, hideRecentlyCovered, sortBy, sortDir])
 
   const selectedCount = selected.size
   const overLimit = selectedCount > MAX_SELECTION
-  const visibleIds = visible.map((w) => w.id)
+  const visibleIds = useMemo(() => visible.map((w) => w.id), [visible])
   const allVisibleSelected =
     visible.length > 0 && visibleIds.every((id) => selected.has(id))
   const someVisibleSelected =
     !allVisibleSelected && visibleIds.some((id) => selected.has(id))
 
-  const toggleOne = (id: string, next: boolean) => {
+  const toggleOne = useCallback((id: string, next: boolean) => {
     setSelected((prev) => {
       const copy = new Set(prev)
       if (next) copy.add(id)
       else copy.delete(id)
       return copy
     })
-  }
+  }, [])
 
-  const toggleAllVisible = (next: boolean) => {
-    setSelected((prev) => {
-      const copy = new Set(prev)
-      for (const id of visibleIds) {
-        if (next) copy.add(id)
-        else copy.delete(id)
-      }
-      return copy
-    })
-  }
+  const toggleAllVisible = useCallback(
+    (next: boolean) => {
+      setSelected((prev) => {
+        const copy = new Set(prev)
+        for (const id of visibleIds) {
+          if (next) copy.add(id)
+          else copy.delete(id)
+        }
+        return copy
+      })
+    },
+    [visibleIds]
+  )
 
-  const clearSelection = () => setSelected(new Set())
+  const clearSelection = useCallback(() => setSelected(new Set()), [])
+
+  const requestMaster = useCallback((word: VocabWord) => {
+    setPendingAction({ type: "master", word })
+  }, [])
+
+  const requestIgnore = useCallback((word: VocabWord) => {
+    setPendingAction({ type: "ignore", word })
+  }, [])
 
   const handleGenerate = () => {
     if (selectedCount === 0 || overLimit) return
@@ -194,14 +265,17 @@ export function VocabWeak() {
     navigate(`/articles/new?target_word_ids=${ids}`)
   }
 
-  const toggleSort = (column: SortBy) => {
-    if (sortBy === column) {
-      setSortDir((d) => (d === "desc" ? "asc" : "desc"))
-    } else {
-      setSortBy(column)
-      setSortDir("desc")
-    }
-  }
+  const toggleSort = useCallback(
+    (column: SortBy) => {
+      if (sortBy === column) {
+        setSortDir((d) => (d === "desc" ? "asc" : "desc"))
+      } else {
+        setSortBy(column)
+        setSortDir("desc")
+      }
+    },
+    [sortBy]
+  )
 
   if (isPending) {
     return <WeakSkeleton />
@@ -216,7 +290,7 @@ export function VocabWeak() {
     )
   }
 
-  if (data.length === 0) {
+  if (total === 0) {
     return (
       <EmptyState
         icon={CheckmarkCircle02Icon}
@@ -230,7 +304,8 @@ export function VocabWeak() {
     <div className="space-y-6 pb-24 md:pb-20">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
-          共 {data.length} 个薄弱词 · 勾选想练的词，一键生成定向文章
+          共 {total} 个薄弱词 · 已加载 {loadedWords.length} 个 ·
+          勾选想练的词，一键生成定向文章
         </p>
         <p className="text-xs text-muted-foreground">
           已掌握 / 忽略的词不再出现在这里
@@ -275,7 +350,7 @@ export function VocabWeak() {
 
         <div className="ms-auto flex items-center gap-1 text-xs text-muted-foreground">
           <span>
-            显示 {visible.length} · 已选 {selectedCount}
+            显示已加载 {visible.length} · 已选 {selectedCount}
           </span>
           {selectedCount > 0 && (
             <Button variant="ghost" size="xs" onClick={clearSelection}>
@@ -285,103 +360,131 @@ export function VocabWeak() {
         </div>
       </div>
 
-      {/* Desktop table view. Below md, switch to a card list with the same
-          semantics but more finger-friendly spacing and no horizontal scroll. */}
-      <div className="hidden overflow-hidden rounded-2xl border border-border/60 md:block">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40">
-              <TableHead className="w-10 pl-4">
-                <Checkbox
-                  aria-label="全选当前筛选"
-                  checked={
-                    allVisibleSelected
-                      ? true
-                      : someVisibleSelected
-                        ? "indeterminate"
-                        : false
-                  }
-                  onCheckedChange={(v) => toggleAllVisible(v === true)}
-                />
-              </TableHead>
-              <TableHead>单词</TableHead>
-              <TableHead>释义</TableHead>
-              <TableHead>反馈</TableHead>
-              <TableHead>
-                <SortButton
-                  label="weak"
-                  active={sortBy === "weak_score"}
-                  dir={sortDir}
-                  onClick={() => toggleSort("weak_score")}
-                />
-              </TableHead>
-              <TableHead>
-                <SortButton
-                  label="练习"
-                  active={sortBy === "study_count"}
-                  dir={sortDir}
-                  onClick={() => toggleSort("study_count")}
-                />
-              </TableHead>
-              <TableHead>
-                <SortButton
-                  label="近期覆盖"
-                  active={sortBy === "recently_covered_count"}
-                  dir={sortDir}
-                  onClick={() => toggleSort("recently_covered_count")}
-                />
-              </TableHead>
-              <TableHead>标签</TableHead>
-              <TableHead className="text-right">下次复习</TableHead>
-              <TableHead className="w-10 pr-4" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {visible.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={10}
-                  className="py-16 text-center text-sm text-muted-foreground"
-                >
-                  没有匹配当前筛选的薄弱词。
-                </TableCell>
+      {isDesktop ? (
+        <div className="overflow-hidden rounded-2xl border border-border/60">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40">
+                <TableHead className="w-10 pl-4">
+                  <Checkbox
+                    aria-label="全选当前已加载"
+                    checked={
+                      allVisibleSelected
+                        ? true
+                        : someVisibleSelected
+                          ? "indeterminate"
+                          : false
+                    }
+                    onCheckedChange={(v) => toggleAllVisible(v === true)}
+                  />
+                </TableHead>
+                <TableHead>单词</TableHead>
+                <TableHead>释义</TableHead>
+                <TableHead>反馈</TableHead>
+                <TableHead>
+                  <SortButton
+                    label="weak"
+                    active={sortBy === "weak_score"}
+                    dir={sortDir}
+                    onClick={() => toggleSort("weak_score")}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortButton
+                    label="练习"
+                    active={sortBy === "study_count"}
+                    dir={sortDir}
+                    onClick={() => toggleSort("study_count")}
+                  />
+                </TableHead>
+                <TableHead>
+                  <SortButton
+                    label="近期覆盖"
+                    active={sortBy === "recently_covered_count"}
+                    dir={sortDir}
+                    onClick={() => toggleSort("recently_covered_count")}
+                  />
+                </TableHead>
+                <TableHead>标签</TableHead>
+                <TableHead className="text-right">下次复习</TableHead>
+                <TableHead className="w-10 pr-4" />
               </TableRow>
-            ) : (
-              visible.map((word) => (
-                <WordTableRow
+            </TableHeader>
+            <TableBody>
+              {visible.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={10}
+                    className="py-16 text-center text-sm text-muted-foreground"
+                  >
+                    没有匹配当前筛选的薄弱词。
+                  </TableCell>
+                </TableRow>
+              ) : (
+                visible.map((word) => (
+                  <WordTableRow
+                    key={word.id}
+                    word={word}
+                    selected={selected.has(word.id)}
+                    onToggle={toggleOne}
+                    onMaster={requestMaster}
+                    onIgnore={requestIgnore}
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div>
+          {visible.length === 0 ? (
+            <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
+              没有匹配当前筛选的薄弱词。
+            </div>
+          ) : (
+            <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
+              {visible.map((word) => (
+                <WordCardRow
                   key={word.id}
                   word={word}
                   selected={selected.has(word.id)}
-                  onToggle={(v) => toggleOne(word.id, v)}
-                  onMaster={() => markMastered.mutate(word)}
-                  onIgnore={() => ignoreWord.mutate(word)}
+                  onToggle={toggleOne}
+                  onMaster={requestMaster}
+                  onIgnore={requestIgnore}
                 />
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-center">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!hasNextPage || isFetchingNextPage}
+          onClick={() => fetchNextPage()}
+        >
+          {isFetchingNextPage
+            ? "加载中..."
+            : hasNextPage
+              ? "加载更多"
+              : "已加载全部"}
+        </Button>
       </div>
 
-      <div className="md:hidden">
-        {visible.length === 0 ? (
-          <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
-            没有匹配当前筛选的薄弱词。
-          </div>
-        ) : (
-          <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
-            {visible.map((word) => (
-              <WordCardRow
-                key={word.id}
-                word={word}
-                selected={selected.has(word.id)}
-                onToggle={(v) => toggleOne(word.id, v)}
-                onMaster={() => markMastered.mutate(word)}
-                onIgnore={() => ignoreWord.mutate(word)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <WeakActionDialog
+        action={pendingAction}
+        onOpenChange={(open) => !open && setPendingAction(null)}
+        onConfirm={() => {
+          if (!pendingAction) return
+          if (pendingAction.type === "master") {
+            markMastered.mutate(pendingAction.word)
+          } else {
+            ignoreWord.mutate(pendingAction.word)
+          }
+        }}
+      />
 
       {selectedCount > 0 && (
         <div
@@ -472,12 +575,12 @@ function SortButton({
 interface WordRowProps {
   word: VocabWord
   selected: boolean
-  onToggle: (next: boolean) => void
-  onMaster: () => void
-  onIgnore: () => void
+  onToggle: (wordId: string, next: boolean) => void
+  onMaster: (word: VocabWord) => void
+  onIgnore: (word: VocabWord) => void
 }
 
-function WordTableRow({
+const WordTableRow = memo(function WordTableRow({
   word,
   selected,
   onToggle,
@@ -491,13 +594,13 @@ function WordTableRow({
       aria-checked={selected}
       role="row"
       className="cursor-pointer focus-within:bg-muted/40"
-      onClick={() => onToggle(!selected)}
+      onClick={() => onToggle(word.id, !selected)}
     >
       <TableCell className="pl-4" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           aria-label={`选择 ${word.spelling}`}
           checked={selected}
-          onCheckedChange={(v) => onToggle(v === true)}
+          onCheckedChange={(v) => onToggle(word.id, v === true)}
         />
       </TableCell>
       <TableCell>
@@ -540,13 +643,13 @@ function WordTableRow({
       <TableCell className="pr-4" onClick={(e) => e.stopPropagation()}>
         <RowActions
           spelling={word.spelling}
-          onMaster={onMaster}
-          onIgnore={onIgnore}
+          onMaster={() => onMaster(word)}
+          onIgnore={() => onIgnore(word)}
         />
       </TableCell>
     </TableRow>
   )
-}
+})
 
 /**
  * Mobile card equivalent of WordTableRow. Targets <md screens where the 10
@@ -558,7 +661,7 @@ function WordTableRow({
  * per row. Keyboard users can press Space / Enter on the card to toggle, or
  * Tab into the inner checkbox and activate directly.
  */
-function WordCardRow({
+const WordCardRow = memo(function WordCardRow({
   word,
   selected,
   onToggle,
@@ -572,11 +675,11 @@ function WordCardRow({
       tabIndex={0}
       aria-pressed={selected}
       aria-label={`选择 ${word.spelling}，${word.translation}`}
-      onClick={() => onToggle(!selected)}
+      onClick={() => onToggle(word.id, !selected)}
       onKeyDown={(e) => {
         if (e.key === " " || e.key === "Enter") {
           e.preventDefault()
-          onToggle(!selected)
+          onToggle(word.id, !selected)
         }
       }}
       className={cn(
@@ -588,7 +691,7 @@ function WordCardRow({
         <Checkbox
           aria-label={`选择 ${word.spelling}`}
           checked={selected}
-          onCheckedChange={(v) => onToggle(v === true)}
+          onCheckedChange={(v) => onToggle(word.id, v === true)}
         />
       </div>
       <div className="min-w-0 flex-1 space-y-1.5">
@@ -637,13 +740,13 @@ function WordCardRow({
       <div className="self-start" onClick={(e) => e.stopPropagation()}>
         <RowActions
           spelling={word.spelling}
-          onMaster={onMaster}
-          onIgnore={onIgnore}
+          onMaster={() => onMaster(word)}
+          onIgnore={() => onIgnore(word)}
         />
       </div>
     </div>
   )
-}
+})
 
 interface RowActionsProps {
   spelling: string
@@ -653,95 +756,94 @@ interface RowActionsProps {
 
 function RowActions({ spelling, onMaster, onIgnore }: RowActionsProps) {
   const [open, setOpen] = useState(false)
-  const [confirm, setConfirm] = useState<"master" | "ignore" | null>(null)
 
   return (
-    <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`${spelling} 操作`}
-            className="text-muted-foreground"
-          >
-            <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.8} />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-52 p-1">
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false)
-              setConfirm("master")
-            }}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
-          >
-            <HugeiconsIcon
-              icon={CheckmarkCircle02Icon}
-              size={14}
-              strokeWidth={1.8}
-            />
-            <span>标记为已掌握</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false)
-              setConfirm("ignore")
-            }}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
-          >
-            <HugeiconsIcon
-              icon={ViewOffSlashIcon}
-              size={14}
-              strokeWidth={1.8}
-            />
-            <span>暂时忽略</span>
-          </button>
-        </PopoverContent>
-      </Popover>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${spelling} 操作`}
+          className="text-muted-foreground"
+        >
+          <HugeiconsIcon icon={MoreHorizontalIcon} strokeWidth={1.8} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-52 p-1">
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false)
+            onMaster()
+          }}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
+        >
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            size={14}
+            strokeWidth={1.8}
+          />
+          <span>标记为已掌握</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false)
+            onIgnore()
+          }}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-muted"
+        >
+          <HugeiconsIcon icon={ViewOffSlashIcon} size={14} strokeWidth={1.8} />
+          <span>暂时忽略</span>
+        </button>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
-      <AlertDialog
-        open={confirm !== null}
-        onOpenChange={(v) => !v && setConfirm(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            {confirm === "master" ? (
-              <>
-                <AlertDialogTitle>
-                  把「{spelling}」标记为已掌握？
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  它会从薄弱词列表消失，下次生成文章也不再优先挑选。
-                  稍后可以在「全部单词」里改回来。
-                </AlertDialogDescription>
-              </>
-            ) : (
-              <>
-                <AlertDialogTitle>暂时忽略「{spelling}」？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  它会从薄弱词列表消失，但不会被标记为已掌握，下次同步后可能重新出现。
-                </AlertDialogDescription>
-              </>
-            )}
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirm === "master") onMaster()
-                else onIgnore()
-                setConfirm(null)
-              }}
-            >
-              {confirm === "master" ? "标记已掌握" : "忽略"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+function WeakActionDialog({
+  action,
+  onOpenChange,
+  onConfirm,
+}: {
+  action: { type: "master" | "ignore"; word: VocabWord } | null
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+}) {
+  const isMaster = action?.type === "master"
+  const spelling = action?.word.spelling ?? ""
+
+  return (
+    <AlertDialog open={action !== null} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          {isMaster ? (
+            <>
+              <AlertDialogTitle>
+                把「{spelling}」标记为已掌握？
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                它会从薄弱词列表消失，下次生成文章也不再优先挑选。
+                稍后可以在「全部单词」里改回来。
+              </AlertDialogDescription>
+            </>
+          ) : (
+            <>
+              <AlertDialogTitle>暂时忽略「{spelling}」？</AlertDialogTitle>
+              <AlertDialogDescription>
+                它会从薄弱词列表消失，但不会被标记为已掌握，下次同步后可能重新出现。
+              </AlertDialogDescription>
+            </>
+          )}
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm}>
+            {isMaster ? "标记已掌握" : "忽略"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

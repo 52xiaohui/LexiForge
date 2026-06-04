@@ -89,9 +89,11 @@ func parseQuery(c *gin.Context) (Query, bool) {
 	return Query{
 		Page:         page,
 		PageSize:     pageSize,
+		Search:       c.Query("search"),
 		LastResponse: c.Query("last_response"),
 		Tag:          c.Query("tag"),
 		MinWeakScore: minWeakScore,
+		MasteryTier:  c.Query("mastery_tier"),
 		Sort:         c.Query("sort"),
 	}, true
 }

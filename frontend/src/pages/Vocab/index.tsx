@@ -1,18 +1,13 @@
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  Book02Icon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons"
+import { Book02Icon, Search01Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useQuery } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useDeferredValue, useEffect, useState } from "react"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { MasteryMeter } from "@/components/common/MasteryMeter"
 import { EmptyState, ErrorState } from "@/components/common/StatusPanel"
+import { VocabPagination } from "@/components/vocab/VocabPagination"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -32,16 +27,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatDateShort } from "@/lib/formatters"
-import { masteryTierFor, type MasteryTierId } from "@/lib/mastery"
+import type { MasteryTierId } from "@/lib/mastery"
 import { api } from "@/lib/api"
 import { withSim } from "@/lib/query-sim"
 import { cn } from "@/lib/utils"
+import { useMediaQuery } from "@/hooks/use-media-query"
 import type { LastResponse, VocabWord } from "@/types/api"
 
 type ResponseFilter = "ALL" | LastResponse
 type MasteryFilter = "ALL" | MasteryTierId
 
-const PAGE_SIZE = 15
+const PAGE_SIZE = 50
 
 const MASTERY_CHIPS: { id: MasteryFilter; label: string }[] = [
   { id: "ALL", label: "全部" },
@@ -55,67 +51,60 @@ export function Vocab() {
   const [responseFilter, setResponseFilter] = useState<ResponseFilter>("ALL")
   const [masteryFilter, setMasteryFilter] = useState<MasteryFilter>("ALL")
   const [page, setPage] = useState(1)
+  const deferredSearch = useDeferredValue(search)
+  const isDesktop = useMediaQuery("(min-width: 768px)")
 
   const {
-    data = [],
+    data: summary,
+    isError: isSummaryError,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: ["vocab", "summary"],
+    queryFn: () => api.vocabSummary(),
+  })
+
+  const {
+    data: pageData,
     isPending,
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["vocab", "words"],
-    queryFn: withSim(() => api.listWords(), { emptyValue: [] }),
+    queryKey: [
+      "vocab",
+      "words",
+      page,
+      PAGE_SIZE,
+      deferredSearch,
+      responseFilter,
+      masteryFilter,
+    ],
+    queryFn: withSim(
+      () =>
+        api.listWordsPage({
+          page,
+          pageSize: PAGE_SIZE,
+          search: deferredSearch,
+          lastResponse: responseFilter,
+          masteryTier: masteryFilter,
+          sort: "-mastery_score",
+        }),
+      { emptyValue: { items: [], total: 0, page, page_size: PAGE_SIZE } }
+    ),
   })
 
-  // Distribution by mastery tier across the whole library — gives the page its
-  // "overview" identity (薄弱词 has no such breakdown) and powers the chips.
-  const tierCounts = useMemo(() => {
-    const counts = { mastered: 0, learning: 0, starting: 0 }
-    for (const w of data) counts[masteryTierFor(w.mastery_score)] += 1
-    return counts
-  }, [data])
-
-  const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return (
-      data
-        .filter((w) => {
-          if (responseFilter !== "ALL" && w.last_response !== responseFilter) {
-            return false
-          }
-          if (
-            masteryFilter !== "ALL" &&
-            masteryTierFor(w.mastery_score) !== masteryFilter
-          ) {
-            return false
-          }
-          if (!query) return true
-          return (
-            w.spelling.toLowerCase().includes(query) ||
-            w.translation.toLowerCase().includes(query)
-          )
-        })
-        // Lead with the most-mastered words: 全部单词 reads as a progress overview,
-        // distinct from 薄弱词 which surfaces the weakest first.
-        .sort(
-          (a, b) =>
-            b.mastery_score - a.mastery_score || b.weak_score - a.weak_score
-        )
-    )
-  }, [data, search, responseFilter, masteryFilter])
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, pageCount)
-  const pageItems = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE
-    return filtered.slice(start, start + PAGE_SIZE)
-  }, [filtered, safePage])
-
-  // Clamp `page` into range when filters shrink the list. Adjusting state
-  // during render (rather than in an effect) is React's recommended pattern
-  // for state that's fully derived from other state.
-  if (page > pageCount) {
-    setPage(pageCount)
+  const pageItems = pageData?.items ?? []
+  const total = pageData?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const tierCounts = summary?.by_mastery_tier ?? {
+    mastered: 0,
+    learning: 0,
+    starting: 0,
   }
+  const totalWords = summary?.total ?? total
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
 
   const resetPage = () => setPage(1)
 
@@ -123,16 +112,19 @@ export function Vocab() {
     return <VocabSkeleton />
   }
 
-  if (isError) {
+  if (isError || isSummaryError) {
     return (
       <ErrorState
         description="没能加载词库。请稍后重试。"
-        onRetry={() => refetch()}
+        onRetry={() => {
+          refetch()
+          refetchSummary()
+        }}
       />
     )
   }
 
-  if (data.length === 0) {
+  if (totalWords === 0) {
     return (
       <EmptyState
         icon={Book02Icon}
@@ -145,12 +137,12 @@ export function Vocab() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        共 {data.length} 个词 · 你的词库总览与掌握进度
+        共 {totalWords} 个词 · 你的词库总览与掌握进度
       </p>
 
       <div className="flex flex-wrap gap-2">
         {MASTERY_CHIPS.map((chip) => {
-          const count = chip.id === "ALL" ? data.length : tierCounts[chip.id]
+          const count = chip.id === "ALL" ? totalWords : tierCounts[chip.id]
           const active = masteryFilter === chip.id
           return (
             <button
@@ -216,110 +208,101 @@ export function Vocab() {
         </div>
       </div>
 
-      {/* Desktop table. Below md we switch to a card list so the 7-column table
-          never forces horizontal scroll on phones. */}
-      <div className="hidden overflow-hidden rounded-2xl border border-border/60 md:block">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40">
-              <TableHead className="pl-4">单词</TableHead>
-              <TableHead>释义</TableHead>
-              <TableHead>反馈</TableHead>
-              <TableHead>掌握度</TableHead>
-              <TableHead>练习次数</TableHead>
-              <TableHead>标签</TableHead>
-              <TableHead className="pr-4 text-right">下次复习</TableHead>
+      {isDesktop ? (
+        <VocabTable words={pageItems} />
+      ) : (
+        <VocabCardList words={pageItems} />
+      )}
+
+      <VocabPagination
+        page={page}
+        pageCount={pageCount}
+        total={total}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+      />
+    </div>
+  )
+}
+
+function VocabTable({ words }: { words: VocabWord[] }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border/60">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40">
+            <TableHead className="pl-4">单词</TableHead>
+            <TableHead>释义</TableHead>
+            <TableHead>反馈</TableHead>
+            <TableHead>掌握度</TableHead>
+            <TableHead>练习次数</TableHead>
+            <TableHead>标签</TableHead>
+            <TableHead className="pr-4 text-right">下次复习</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {words.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={7}
+                className="py-16 text-center text-sm text-muted-foreground"
+              >
+                没有匹配的单词。
+              </TableCell>
             </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageItems.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={7}
-                  className="py-16 text-center text-sm text-muted-foreground"
-                >
-                  没有匹配的单词。
+          ) : (
+            words.map((word) => (
+              <TableRow key={word.id}>
+                <TableCell className="pl-4">
+                  <div className="font-heading text-sm font-medium">
+                    {word.spelling}
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
+                  {word.translation}
+                </TableCell>
+                <TableCell>
+                  <LastResponseBadge value={word.last_response} />
+                </TableCell>
+                <TableCell>
+                  <MasteryMeter score={word.mastery_score} />
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground tabular-nums">
+                  {word.study_count}
+                </TableCell>
+                <TableCell>
+                  {word.tags.includes("STICKING") && (
+                    <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                      反复忘
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="pr-4 text-right text-xs text-muted-foreground tabular-nums">
+                  {formatDateShort(word.next_study_date)}
                 </TableCell>
               </TableRow>
-            ) : (
-              pageItems.map((word) => (
-                <TableRow key={word.id}>
-                  <TableCell className="pl-4">
-                    <div className="font-heading text-sm font-medium">
-                      {word.spelling}
-                    </div>
-                  </TableCell>
-                  <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
-                    {word.translation}
-                  </TableCell>
-                  <TableCell>
-                    <LastResponseBadge value={word.last_response} />
-                  </TableCell>
-                  <TableCell>
-                    <MasteryMeter score={word.mastery_score} />
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground tabular-nums">
-                    {word.study_count}
-                  </TableCell>
-                  <TableCell>
-                    {word.tags.includes("STICKING") && (
-                      <Badge
-                        variant="outline"
-                        className="h-5 px-1.5 text-[10px]"
-                      >
-                        反复忘
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="pr-4 text-right text-xs text-muted-foreground tabular-nums">
-                    {formatDateShort(word.next_study_date)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
 
-      <div className="md:hidden">
-        {pageItems.length === 0 ? (
-          <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
-            没有匹配的单词。
-          </div>
-        ) : (
-          <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
-            {pageItems.map((word) => (
-              <WordCard key={word.id} word={word} />
-            ))}
-          </div>
-        )}
+function VocabCardList({ words }: { words: VocabWord[] }) {
+  if (words.length === 0) {
+    return (
+      <div className="rounded-2xl border border-border/60 py-16 text-center text-sm text-muted-foreground">
+        没有匹配的单词。
       </div>
+    )
+  }
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
-          第 {safePage} / {pageCount} 页 · 共 {filtered.length} 个词
-        </span>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="上一页"
-            disabled={safePage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.8} />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="下一页"
-            disabled={safePage >= pageCount}
-            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-          >
-            <HugeiconsIcon icon={ArrowRight01Icon} strokeWidth={1.8} />
-          </Button>
-        </div>
-      </div>
+  return (
+    <div className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60">
+      {words.map((word) => (
+        <WordCard key={word.id} word={word} />
+      ))}
     </div>
   )
 }

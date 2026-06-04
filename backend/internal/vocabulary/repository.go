@@ -31,9 +31,11 @@ type ListOptions struct {
 	UserID       uuid.UUID
 	Page         int
 	PageSize     int
+	Search       string
 	LastResponse string
 	Tag          string
 	MinWeakScore *int
+	MasteryTier  string
 	WeakOnly     bool
 	Sort         string
 }
@@ -73,6 +75,7 @@ type Summary struct {
 	WeakCount         int64            `json:"weak_count"`
 	StickingCount     int64            `json:"sticking_count"`
 	ByLastResponse    map[string]int64 `json:"by_last_response"`
+	ByMasteryTier     map[string]int64 `json:"by_mastery_tier"`
 	LatestSyncedAt    *time.Time       `json:"latest_synced_at,omitempty"`
 	NextStudyDueCount int64            `json:"next_study_due_count"`
 }
@@ -116,7 +119,10 @@ func (r *Repository) GetRecord(userID, id uuid.UUID) (RecordRow, error) {
 }
 
 func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
-	summary := Summary{ByLastResponse: map[string]int64{}}
+	summary := Summary{
+		ByLastResponse: map[string]int64{},
+		ByMasteryTier:  map[string]int64{"mastered": 0, "learning": 0, "starting": 0},
+	}
 
 	if err := r.db.Model(&StudyRecord{}).Where("user_id = ?", userID).Count(&summary.Total).Error; err != nil {
 		return Summary{}, err
@@ -147,6 +153,27 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 		summary.ByLastResponse[count.LastResponse] = count.Count
 	}
 
+	type masteryCount struct {
+		Tier  string
+		Count int64
+	}
+	var masteryCounts []masteryCount
+	masteryTierSQL := `CASE
+		WHEN mastery_score >= 80 THEN 'mastered'
+		WHEN mastery_score >= 45 THEN 'learning'
+		ELSE 'starting'
+	END`
+	if err := r.db.Model(&StudyRecord{}).
+		Select(masteryTierSQL+" AS tier, count(*) AS count").
+		Where("user_id = ?", userID).
+		Group(masteryTierSQL).
+		Find(&masteryCounts).Error; err != nil {
+		return Summary{}, err
+	}
+	for _, count := range masteryCounts {
+		summary.ByMasteryTier[count.Tier] = count.Count
+	}
+
 	var latest StudyRecord
 	err := r.db.Where("user_id = ? AND synced_at IS NOT NULL", userID).Order("synced_at DESC").First(&latest).Error
 	if err == nil {
@@ -162,6 +189,14 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
 		Joins(dictionaryTranslationJoin("vw.spelling")).
 		Where("sr.user_id = ?", opts.UserID)
+	if opts.Search != "" {
+		pattern := "%" + opts.Search + "%"
+		query = query.Where(
+			"(vw.spelling ILIKE ? OR COALESCE(dict.translation, '') ILIKE ?)",
+			pattern,
+			pattern,
+		)
+	}
 	if opts.LastResponse != "" {
 		query = query.Where("sr.last_response = ?", opts.LastResponse)
 	}
@@ -174,6 +209,14 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 	}
 	if opts.MinWeakScore != nil {
 		query = query.Where("sr.weak_score >= ?", *opts.MinWeakScore)
+	}
+	switch opts.MasteryTier {
+	case "mastered":
+		query = query.Where("sr.mastery_score >= 80")
+	case "learning":
+		query = query.Where("sr.mastery_score >= 45 AND sr.mastery_score < 80")
+	case "starting":
+		query = query.Where("sr.mastery_score < 45")
 	}
 	if opts.WeakOnly && opts.MinWeakScore == nil {
 		query = query.Where("(sr.weak_score >= ? OR sr.mastery_score < ?)", weakListMinWeakScore, weakListMaxMastery)
