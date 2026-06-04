@@ -23,9 +23,10 @@ backend/server.exe
 coverage.out
 *.coverprofile
 
-# Env files (.env is local; only .env.example is tracked) ----------------------
+# Env files -------------------------------------------------------------------
 *.env
 .env.*
+!.env
 !*.env.example
 !.env.example
 
