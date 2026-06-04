@@ -23,7 +23,6 @@ import { api } from "@/lib/api"
 import { mockStore } from "@/lib/mock-data"
 import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
 import { withSim } from "@/lib/query-sim"
-import { cn } from "@/lib/utils"
 import type {
   ArticleDetail as ArticleDetailType,
   CefrLevel,
@@ -414,7 +413,10 @@ export function ArticleDetail() {
   const onSpeechNext = () => karaoke.next()
 
   return (
-    <div className="pb-20 sm:pb-4">
+    <div
+      data-slot="article-detail-page"
+      className="relative -mx-4 -my-6 px-4 py-6 pb-20 sm:-mx-6 sm:-my-8 sm:px-6 sm:py-8 sm:pb-10 lg:-mx-10 lg:-my-12 lg:px-10 lg:py-12"
+    >
       <ReadingProgress />
 
       <div className="mt-2 mb-2">
@@ -467,19 +469,15 @@ export function ArticleDetail() {
       {/* The article column is always centered now. The legacy `lg:col-span-3 +
           lg:col-span-2` grid was retired in favour of a floating drawer for
           coverage info, so the body can keep ~70ch on every screen. */}
-      <div
-        className={cn(
-          "mx-auto mt-4 w-full",
-          // ~70ch reading width — leans on Tailwind's max-w-prose token but
-          // matches the body's serif tone via a slightly tighter constraint.
-          "max-w-[70ch]"
-        )}
-      >
-        <header className="space-y-3 py-2">
-          <h1 className="font-heading text-3xl leading-tight font-semibold tracking-tight">
+      <div className="mx-auto mt-5 w-full max-w-[74ch]">
+        <header
+          data-slot="article-hero"
+          className="mx-auto max-w-[68ch] space-y-4 py-6 text-center sm:py-8"
+        >
+          <h1 className="text-4xl leading-[1.08] font-medium tracking-normal text-balance sm:text-5xl sm:leading-[1.03] [font-family:var(--font-reading-serif)]">
             {article.title}
           </h1>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <div className="mx-auto flex max-w-[64ch] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
             <Badge variant="outline" className="text-[10px]">
               {formatDifficulty(article.difficulty)}
             </Badge>

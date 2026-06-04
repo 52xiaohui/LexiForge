@@ -95,7 +95,7 @@ export function ReadingToolbar(props: ReadingToolbarProps) {
   const playing = speechSpeaking && !speechPaused
 
   return (
-    <div className="hidden flex-wrap items-center gap-1 rounded-2xl border border-border/60 bg-muted/30 p-1.5 sm:flex">
+    <div className="hidden flex-wrap items-center gap-1 rounded-2xl border border-border/50 bg-background/55 p-1.5 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/45 sm:flex">
       {speechSupported && (
         <div
           className="flex items-center gap-0.5"
@@ -295,7 +295,7 @@ export function MobileReadingBar(
   return (
     <div
       className={cn(
-        "fixed inset-x-2 z-30 flex items-center justify-between gap-1 rounded-2xl border border-border/60 bg-background/95 p-1 shadow-lg backdrop-blur sm:hidden",
+        "fixed inset-x-2 z-30 flex items-center justify-between gap-1 rounded-2xl border border-border/60 bg-background/92 p-1 shadow-lg backdrop-blur sm:hidden",
       )}
       style={{ bottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       role="toolbar"

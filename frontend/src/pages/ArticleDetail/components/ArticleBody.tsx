@@ -110,18 +110,19 @@ export function ArticleBody({
       data-slot="article-body"
       data-tone={tone}
       className={cn(
-        // On phones the prose sits directly on the page — dropping the boxed
-        // card (bg/ring/rounded) and the double gutter gives the text room.
-        // The elevated reading card returns from sm: upward.
+        // The prose reads like a quiet sheet of paper instead of a dashboard
+        // card. Phones keep the page open; larger screens get a subtle paper
+        // surface without competing with the target-word interactions.
         "px-3 py-2 text-card-foreground",
-        "sm:rounded-3xl sm:bg-card sm:p-8 sm:ring-1 sm:ring-foreground/5",
+        "sm:rounded-[1.75rem] sm:p-9 sm:ring-1 sm:ring-foreground/5",
+        "sm:shadow-[0_24px_80px_color-mix(in_oklch,var(--color-foreground)_8%,transparent)]",
         FONT_SIZE_CLASS[fontSize],
         fontFamily === "serif"
           ? "[font-family:var(--font-reading-serif)]"
           : "font-sans",
       )}
     >
-      <div className="space-y-5">
+      <div className="space-y-6">
         {paragraphs.map((p) => (
           <div
             key={p.idx}
@@ -129,10 +130,11 @@ export function ArticleBody({
             data-paragraph-idx={p.idx}
             id={paragraphDomId(articleId, p.idx)}
             className={cn(
-              "group/paragraph",
-              feedback[p.idx] === "stuck" && "rounded-xl bg-amber-200/15 px-2",
+              "group/paragraph motion-safe:animate-reading-paragraph",
+              feedback[p.idx] === "stuck" && "rounded-xl bg-amber-200/15 px-2 py-1",
               feedback[p.idx] === "ok" && "opacity-95",
             )}
+            style={{ animationDelay: `${Math.min(p.idx, 6) * 45}ms` }}
           >
             <p className="m-0">
               {p.sentences.map((s) => (

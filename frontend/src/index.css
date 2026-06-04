@@ -149,6 +149,7 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+    --animate-reading-paragraph: reading-paragraph 420ms ease-out both;
 }
 
 @layer base {
@@ -170,6 +171,40 @@
 /* ----------------------------------------------------------------------------
  * Reading surface
  * --------------------------------------------------------------------------*/
+
+[data-slot="article-detail-page"] {
+    background-color: color-mix(in oklch, var(--color-background) 92%, oklch(0.965 0.025 84));
+}
+.dark [data-slot="article-detail-page"] {
+    background-color: color-mix(in oklch, var(--color-background) 94%, oklch(0.245 0.018 60));
+}
+
+@media (min-width: 640px) {
+    [data-slot="article-body"] {
+        background-color: color-mix(in oklch, var(--color-background) 96%, oklch(0.965 0.018 84));
+    }
+    .dark [data-slot="article-body"] {
+        background-color: color-mix(in oklch, var(--color-card) 94%, oklch(0.245 0.018 60));
+    }
+}
+
+@keyframes reading-paragraph {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-slot="paragraph"] {
+        animation: none !important;
+        transform: none !important;
+    }
+}
 
 /* Sepia tint applied to the article reading surface only — tinted via local
  * custom props so the global theme tokens are untouched. Toggled by

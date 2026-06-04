@@ -61,7 +61,7 @@ export function FinishBar({
   // "read article → read another article". `导出` is rare and `批量掌握` is
   // too heavy a commitment to be top-level.
   return (
-    <section className="rounded-3xl border border-border/60 bg-muted/30 p-4 sm:p-5">
+    <section className="rounded-[1.5rem] border border-border/50 bg-background/55 p-4 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/45 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="font-heading text-sm font-medium">读完了？</div>
