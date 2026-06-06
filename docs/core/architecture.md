@@ -1,6 +1,6 @@
-# 02 · 技术栈与架构
+# Architecture
 
-[← 上一篇：产品定位与范围](01-product.md) · [文档导航](README.md) · [下一篇：数据库与评分模型 →](03-database.md)
+[Previous: product](product.md) · [Docs](../README.md) · [Next: data-model](data-model.md)
 
 ---
 
@@ -65,7 +65,7 @@ PostgreSQL 托管数据库
 - 日志脱敏
 - AI API 调用
 
-这些场景和 Go 非常匹配。对大二学生来说，用 Go 完成这个项目也有较强简历辨识度。
+这些场景和 Go 的并发、超时控制、接口分层、部署模型比较匹配。
 
 ## 系统架构
 
@@ -211,4 +211,4 @@ backend/
 
 ---
 
-[← 上一篇：产品定位与范围](01-product.md) · [文档导航](README.md) · [下一篇：数据库与评分模型 →](03-database.md)
+[Previous: product](product.md) · [Docs](../README.md) · [Next: data-model](data-model.md)

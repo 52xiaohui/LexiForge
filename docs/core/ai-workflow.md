@@ -1,6 +1,6 @@
-# 05 · AI 生成工作流
+# AI Workflow
 
-[← 上一篇：REST API 与 MaiMemo Client](04-api.md) · [文档导航](README.md) · [下一篇：前端设计 →](06-frontend.md)
+[Previous: api](api.md) · [Docs](../README.md) · [Next: frontend](frontend.md)
 
 ---
 
@@ -171,4 +171,4 @@ Keep the original topic and difficulty.
 
 ---
 
-[← 上一篇：REST API 与 MaiMemo Client](04-api.md) · [文档导航](README.md) · [下一篇：前端设计 →](06-frontend.md)
+[Previous: api](api.md) · [Docs](../README.md) · [Next: frontend](frontend.md)
