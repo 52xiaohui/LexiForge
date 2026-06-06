@@ -10,8 +10,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
+
+export type ParagraphFeedbackValue = "ok" | "stuck"
 
 export interface ParagraphFeedbackButtonsProps {
   value: ParagraphFeedbackValue | null

@@ -2,6 +2,7 @@ import type {
   Article,
   ArticleDetail,
   ArticleLength,
+  ArticleProgress,
   ArticleWord,
   GenerateArticleInput,
   GenerationPreview,
@@ -9,7 +10,6 @@ import type {
   MasteryTierId,
   Page,
   SyncResult,
-  TodayProgress,
   VocabSummary,
   VocabWord,
 } from "@/types/api"
@@ -68,6 +68,9 @@ interface BackendArticleListItem {
   generation_status?: string
   model_name?: string
   created_at?: string
+  progress_status?: BackendArticleProgress["status"] | null
+  progress_percent?: number
+  last_paragraph_index?: number | null
 }
 
 interface BackendArticleDetail {
@@ -131,6 +134,15 @@ function mapArticle(
   item: BackendArticleListItem,
   progress?: BackendArticleProgress | null
 ): Article {
+  const listProgress =
+    progress ??
+    (item.progress_status
+      ? {
+          status: item.progress_status,
+          progress_percent: item.progress_percent ?? 0,
+          last_paragraph_index: item.last_paragraph_index ?? null,
+        }
+      : null)
   return {
     id: item.id,
     title: item.title || "Untitled article",
@@ -142,7 +154,8 @@ function mapArticle(
     covered_word_count: item.covered_word_count,
     coverage_rate: item.coverage_rate,
     created_at: item.created_at ?? new Date(0).toISOString(),
-    read: progress?.status === "read",
+    read: listProgress?.status === "read",
+    progress: listProgress ?? undefined,
   }
 }
 
@@ -375,14 +388,7 @@ export const api = {
     const page = await request<Page<BackendArticleListItem>>(
       "/articles?page_size=100"
     )
-    const progress = await Promise.all(
-      page.items.map((item) =>
-        request<BackendArticleProgress>(`/articles/${item.id}/progress`).catch(
-          () => null
-        )
-      )
-    )
-    return page.items.map((item, index) => mapArticle(item, progress[index]))
+    return page.items.map((item) => mapArticle(item))
   },
 
   async firstUnreadArticle(): Promise<Article | null> {
@@ -402,6 +408,24 @@ export const api = {
       content_markdown: detail.article.content_markdown,
       article_words: detail.words.map(mapArticleWord),
     }
+  },
+
+  async getArticleProgress(id: string): Promise<ArticleProgress> {
+    return request<BackendArticleProgress>(`/articles/${id}/progress`)
+  },
+
+  async updateArticleProgress(
+    id: string,
+    input: {
+      status?: ArticleProgress["status"]
+      progress_percent?: number
+      last_paragraph_index?: number | null
+    }
+  ): Promise<ArticleProgress> {
+    return request<BackendArticleProgress>(`/articles/${id}/progress`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    })
   },
 
   async deleteArticle(id: string): Promise<void> {
@@ -434,10 +458,7 @@ export const api = {
   },
 
   async markArticleRead(id: string): Promise<boolean> {
-    await request<BackendArticleProgress>(`/articles/${id}/progress`, {
-      method: "PUT",
-      body: JSON.stringify({ status: "read" }),
-    })
+    await api.updateArticleProgress(id, { status: "read" })
     return true
   },
 

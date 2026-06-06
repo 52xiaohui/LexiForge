@@ -315,11 +315,6 @@ function FlashcardDeck({
             <span className="font-heading text-2xl font-medium">
               {aw.translation}
             </span>
-            {word?.example_sentence && (
-              <p className="mt-3 text-xs leading-relaxed text-muted-foreground italic">
-                {word.example_sentence}
-              </p>
-            )}
           </>
         )}
       </button>

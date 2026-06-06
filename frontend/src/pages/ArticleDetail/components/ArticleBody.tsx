@@ -1,7 +1,6 @@
 import { Fragment, useEffect, useRef } from "react"
 
 import { cn } from "@/lib/utils"
-import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
 import type { ReadingFontFamily, ReadingFontSize } from "@/hooks/use-reading-prefs"
 import type { VocabWord } from "@/types/api"
 
@@ -10,7 +9,10 @@ import {
   sentenceDomId,
   type Paragraph,
 } from "../parsing"
-import { ParagraphFeedbackButtons } from "./ParagraphFeedback"
+import {
+  ParagraphFeedbackButtons,
+  type ParagraphFeedbackValue,
+} from "./ParagraphFeedback"
 import { TargetMark } from "./TargetMark"
 
 // Per-mode body type. Values tuned for comfortable paragraph reading at each

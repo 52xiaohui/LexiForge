@@ -142,7 +142,8 @@ completed_at
 unique(user_id, article_id)
 ```
 
-Reading an article can create `exposed_in_article` events, but exposure is not mastery.
+Reading an article to completion creates `exposed_in_article` events for covered
+target words, but exposure is not mastery.
 
 ## Articles
 

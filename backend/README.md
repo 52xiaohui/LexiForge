@@ -1,13 +1,15 @@
 # LexiForge Backend
 
-Go + Gin + GORM + PostgreSQL backend for LexiForge / Memo-Skills, scaffolded
-per `docs/02-architecture.md`. MVP scope: single-user, MaiMemo sync, AI
-article generation, coverage tracking. v0.5+ topics (auth, encryption,
-limits, async jobs, imports) are intentionally absent.
+Go + Gin + GORM + PostgreSQL backend for LexiForge. MVP scope: single-user,
+MaiMemo sync, vocabulary scoring, AI article generation, reading progress,
+local word-learning events, dictionary lookup, and Markdown export. v0.5+
+topics such as auth, encrypted third-party token storage, limits, async jobs,
+and user-managed imports are intentionally absent.
 
 The MVP backend core is implemented: MaiMemo sync pulls single-user records,
 scores them, upserts `vocab_words` / `study_records`, exposes vocab query
-endpoints, generates AI articles, persists coverage metadata, and exports
+endpoints, generates AI articles, persists coverage metadata and generation
+parameters, records local reader events, tracks article progress, and exports
 article Markdown.
 
 ## Quick start (local Go)
@@ -85,16 +87,19 @@ backend/
     httpx/                       {code,message,details} response helper
     middleware/                  cors, structured logger (redacted), recover
     user/                        User model + LocalUserID constant
-    vocabulary/                  VocabWord, StudyRecord + handler/service/repo
+    dictionary/                  local dictionary lookup/import support
+    vocabulary/                  vocab records, scoring, preferences
     article/                     Article, ArticleWord + handler/service/repo
+    learning/                    word learning events
     maimemo/                     MaiMemo client + sync handler/service/repo
     ai/                          OpenAI-compatible article generation client
-    export/                      v0.5+ export skeleton (empty in MVP)
 ```
 
 DB tables created by AutoMigrate: `users`, `vocab_words`, `study_records`,
-`articles`, `article_words`. The `users` table is seeded with a fixed-UUID
-local-user row (`00000000-0000-0000-0000-000000000001`) on every boot.
+`user_word_preferences`, `dictionary_entries`, `articles`, `article_words`,
+`user_article_progress`, and `word_learning_events`. The `users` table is
+seeded with a fixed-UUID local-user row
+(`00000000-0000-0000-0000-000000000001`) on every boot.
 
 ## Conventions
 
@@ -113,7 +118,9 @@ local-user row (`00000000-0000-0000-0000-000000000001`) on every boot.
 
 Roughly in priority order:
 - Broader integration tests for sync and API handler flows
-- Frontend MVP screens for sync, vocabulary, and article generation
+- Authentication and multi-user account boundaries
+- Encrypted token storage for integrations
+- Async sync/generation jobs and rate limits
 
 v0.5 picks up auth, AES-GCM token storage, Redis-backed limits, async sync
 jobs, and CSV/Anki imports.

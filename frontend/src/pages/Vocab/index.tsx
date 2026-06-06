@@ -1,7 +1,7 @@
 import { Book02Icon, Search01Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useQuery } from "@tanstack/react-query"
-import { useDeferredValue, useEffect, useState } from "react"
+import { useDeferredValue, useState } from "react"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { MasteryMeter } from "@/components/common/MasteryMeter"
@@ -101,10 +101,11 @@ export function Vocab() {
     starting: 0,
   }
   const totalWords = summary?.total ?? total
-
-  useEffect(() => {
+  const [trackedPageCount, setTrackedPageCount] = useState(pageCount)
+  if (trackedPageCount !== pageCount) {
+    setTrackedPageCount(pageCount)
     if (page > pageCount) setPage(pageCount)
-  }, [page, pageCount])
+  }
 
   const resetPage = () => setPage(1)
 

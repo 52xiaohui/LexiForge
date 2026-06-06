@@ -16,6 +16,7 @@ import (
 	"lexiforge/backend/internal/article"
 	"lexiforge/backend/internal/config"
 	"lexiforge/backend/internal/database"
+	"lexiforge/backend/internal/learning"
 	"lexiforge/backend/internal/user"
 	"lexiforge/backend/internal/vocabulary"
 )
@@ -105,6 +106,34 @@ func TestArticleGenerationPersistsAndReadsPostgresRows(t *testing.T) {
 	}
 	if list.Total != 1 || len(list.Items) != 1 {
 		t.Fatalf("list total=%d items=%d, want one article", list.Total, len(list.Items))
+	}
+
+	if _, err := svc.UpdateProgress(context.Background(), got.ArticleID.String(), article.ArticleProgressRequest{
+		Status: article.ArticleProgressRead,
+	}); err != nil {
+		t.Fatalf("UpdateProgress(read) returned error: %v", err)
+	}
+	var exposureCount int64
+	if err := db.Model(&learning.WordLearningEvent{}).
+		Where("article_id = ? AND event_type = ?", got.ArticleID, learning.EventExposedInArticle).
+		Count(&exposureCount).Error; err != nil {
+		t.Fatalf("count exposure events: %v", err)
+	}
+	if exposureCount != 15 {
+		t.Fatalf("exposure events = %d, want 15 covered target words", exposureCount)
+	}
+	if _, err := svc.UpdateProgress(context.Background(), got.ArticleID.String(), article.ArticleProgressRequest{
+		Status: article.ArticleProgressRead,
+	}); err != nil {
+		t.Fatalf("second UpdateProgress(read) returned error: %v", err)
+	}
+	if err := db.Model(&learning.WordLearningEvent{}).
+		Where("article_id = ? AND event_type = ?", got.ArticleID, learning.EventExposedInArticle).
+		Count(&exposureCount).Error; err != nil {
+		t.Fatalf("recount exposure events: %v", err)
+	}
+	if exposureCount != 15 {
+		t.Fatalf("exposure events after duplicate read = %d, want 15", exposureCount)
 	}
 
 	if err := svc.Delete(context.Background(), got.ArticleID.String()); err != nil {

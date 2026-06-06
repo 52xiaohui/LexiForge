@@ -5,9 +5,9 @@
 ## Stage
 
 ```text
-Stage: MVP data foundation correction
+Stage: MVP data foundation stabilization
 Date: 2026-06-06
-Status: MVP data foundation implemented
+Status: Technical debt pass complete; data foundation stable
 ```
 
 Goal: keep MVP small, but make data semantics real before implementation continues.
@@ -39,23 +39,32 @@ Work proceeds in this order.
     - use backend Markdown export
     - remove fake `recently_covered_count` or backend-drive it
     - remove outdated “frontend prototype” delete copy
+11. [x] Technical debt pass after data foundation
+    - fix frontend lint gate
+    - persist article `progress_percent` / `last_paragraph_index` from reader
+    - create `exposed_in_article` events when an article first becomes read
+    - remove stale mock-data business store and mock-only API fields
+    - include article progress in article list responses to avoid frontend N+1
+    - update backend/frontend README drift
 
 ## Validation Notes
 
 Latest diagnostic run:
 
 ```text
-backend: go test ./... passed after task 10 dashboard/history cleanup
-frontend: ./node_modules/.bin/tsc --noEmit passed after task 10 dashboard/history cleanup; pnpm is not available in PATH
-frontend: ./node_modules/.bin/vitest run passed
-frontend: ./node_modules/.bin/vite build passed
+backend: go test ./... passed after task 11 technical debt pass
+frontend: ./node_modules/.bin/tsc --noEmit passed after task 11 technical debt pass
+frontend: ./node_modules/.bin/eslint . passed after task 11 technical debt pass
+frontend: ./node_modules/.bin/vitest run passed after task 11 technical debt pass
+frontend: ./node_modules/.bin/vite build passed after task 11 technical debt pass
 ```
 
 Before implementation is considered stable:
 
 ```bash
 go test ./...
-pnpm typecheck
-pnpm test
-pnpm build
+./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/eslint .
+./node_modules/.bin/vitest run
+./node_modules/.bin/vite build
 ```

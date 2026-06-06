@@ -71,18 +71,21 @@ type ArticleDetail struct {
 }
 
 type ArticleListItem struct {
-	ID               uuid.UUID `json:"id"`
-	Title            string    `json:"title"`
-	Topic            string    `json:"topic"`
-	Difficulty       string    `json:"difficulty"`
-	ArticleLength    string    `json:"article_length"`
-	Summary          string    `json:"summary"`
-	TargetWordCount  int       `json:"target_word_count"`
-	CoveredWordCount int       `json:"covered_word_count"`
-	CoverageRate     float64   `json:"coverage_rate"`
-	GenerationStatus string    `json:"generation_status"`
-	ModelName        string    `json:"model_name"`
-	CreatedAt        time.Time `json:"created_at"`
+	ID                 uuid.UUID `json:"id"`
+	Title              string    `json:"title"`
+	Topic              string    `json:"topic"`
+	Difficulty         string    `json:"difficulty"`
+	ArticleLength      string    `json:"article_length"`
+	Summary            string    `json:"summary"`
+	TargetWordCount    int       `json:"target_word_count"`
+	CoveredWordCount   int       `json:"covered_word_count"`
+	CoverageRate       float64   `json:"coverage_rate"`
+	GenerationStatus   string    `json:"generation_status"`
+	ModelName          string    `json:"model_name"`
+	CreatedAt          time.Time `json:"created_at"`
+	ProgressStatus     *string   `json:"progress_status,omitempty"`
+	ProgressPercent    int       `json:"progress_percent"`
+	LastParagraphIndex *int      `json:"last_paragraph_index,omitempty"`
 }
 
 type ArticleListResult struct {
@@ -93,8 +96,9 @@ type ArticleListResult struct {
 var ErrArticleNotFound = errors.New("article not found")
 
 const (
-	autoPickMinWeakScore = 50
-	autoPickMaxMastery   = 60
+	autoPickMinWeakScore  = 50
+	autoPickMaxMastery    = 60
+	eventExposedInArticle = "exposed_in_article"
 )
 
 func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, selectedIDs []uuid.UUID, targetCount int) ([]TargetWordRecord, error) {
@@ -214,14 +218,23 @@ func (r *Repository) SaveGeneratedArticle(ctx context.Context, draft ArticleDraf
 }
 
 func (r *Repository) ListArticles(ctx context.Context, userID uuid.UUID, page, pageSize int) (ArticleListResult, error) {
-	query := r.db.WithContext(ctx).Model(&Article{}).Where("user_id = ? AND deleted_at IS NULL", userID)
 	var total int64
-	if err := query.Count(&total).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&Article{}).
+		Where("user_id = ? AND deleted_at IS NULL", userID).
+		Count(&total).Error; err != nil {
 		return ArticleListResult{}, err
 	}
 	var items []ArticleListItem
-	err := query.Select("id, title, topic, difficulty, article_length, summary, target_word_count, covered_word_count, coverage_rate, generation_status, model_name, created_at").
-		Order("created_at DESC").
+	err := r.db.WithContext(ctx).Table("articles AS a").
+		Select(`a.id, a.title, a.topic, a.difficulty, a.article_length, a.summary,
+			a.target_word_count, a.covered_word_count, a.coverage_rate,
+			a.generation_status, a.model_name, a.created_at,
+			uap.status AS progress_status,
+			COALESCE(uap.progress_percent, 0) AS progress_percent,
+			uap.last_paragraph_index`).
+		Joins("LEFT JOIN user_article_progress AS uap ON uap.article_id = a.id AND uap.user_id = ?", userID).
+		Where("a.user_id = ? AND a.deleted_at IS NULL", userID).
+		Order("a.created_at DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
 		Find(&items).Error
@@ -282,8 +295,24 @@ func (r *Repository) GetArticleProgress(ctx context.Context, userID, articleID u
 	return row, true, nil
 }
 
-func (r *Repository) UpsertArticleProgress(ctx context.Context, progress UserArticleProgress) (UserArticleProgress, error) {
-	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+func (r *Repository) UpsertArticleProgressWithExposures(ctx context.Context, progress UserArticleProgress, recordExposures bool) (UserArticleProgress, error) {
+	db := r.db.WithContext(ctx)
+	if recordExposures {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			var err error
+			progress, err = upsertArticleProgress(tx, progress)
+			if err != nil {
+				return err
+			}
+			return insertArticleExposureEvents(tx, progress.UserID, progress.ArticleID)
+		})
+		return progress, err
+	}
+	return upsertArticleProgress(db, progress)
+}
+
+func upsertArticleProgress(db *gorm.DB, progress UserArticleProgress) (UserArticleProgress, error) {
+	err := db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "user_id"}, {Name: "article_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"status",
@@ -297,12 +326,30 @@ func (r *Repository) UpsertArticleProgress(ctx context.Context, progress UserArt
 	if err != nil {
 		return UserArticleProgress{}, err
 	}
-	if err := r.db.WithContext(ctx).
+	if err := db.
 		Where("user_id = ? AND article_id = ?", progress.UserID, progress.ArticleID).
 		First(&progress).Error; err != nil {
 		return UserArticleProgress{}, err
 	}
 	return progress, nil
+}
+
+func insertArticleExposureEvents(db *gorm.DB, userID, articleID uuid.UUID) error {
+	return db.Exec(`
+		INSERT INTO word_learning_events (user_id, word_id, article_id, event_type, source, metadata, created_at)
+		SELECT ?, aw.word_id, aw.article_id, ?, 'reader', '{}'::jsonb, NOW()
+		FROM article_words AS aw
+		WHERE aw.article_id = ?
+			AND aw.is_covered = true
+			AND NOT EXISTS (
+				SELECT 1
+				FROM word_learning_events AS existing
+				WHERE existing.user_id = ?
+					AND existing.word_id = aw.word_id
+					AND existing.article_id = aw.article_id
+					AND existing.event_type = ?
+			)
+	`, userID, eventExposedInArticle, articleID, userID, eventExposedInArticle).Error
 }
 
 func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, where string, args []any, limit int, excludeIgnored bool) ([]TargetWordRecord, error) {

@@ -5,12 +5,9 @@ import {
   VolumeHighIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
-import { Link } from "react-router-dom"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -22,7 +19,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { ArticleWord, VocabWord } from "@/types/api"
 
@@ -143,36 +139,6 @@ export function TargetMark({
           )}
         </div>
 
-        {revealed && word?.example_sentence && (
-          <blockquote className="border-l-2 border-border/60 pl-3 text-xs leading-relaxed text-muted-foreground italic">
-            {word.example_sentence}
-          </blockquote>
-        )}
-
-        {revealed && word?.synonyms && word.synonyms.length > 0 && (
-          <MetaRow label="近义词">
-            <div className="flex flex-wrap gap-1">
-              {word.synonyms.map((s) => (
-                <Badge
-                  key={s}
-                  variant="outline"
-                  className="text-[11px] font-normal"
-                >
-                  {s}
-                </Badge>
-              ))}
-            </div>
-          </MetaRow>
-        )}
-
-        {revealed && word?.root_note && (
-          <MetaRow label="词根">
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {word.root_note}
-            </p>
-          </MetaRow>
-        )}
-
         {word && (
           <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
             <span>
@@ -182,18 +148,7 @@ export function TargetMark({
               </span>
             </span>
             <span>练习 {word.study_count} 次</span>
-            {word.recently_covered_count != null &&
-              word.recently_covered_count > 1 && (
-                <span>近期覆盖 {word.recently_covered_count} 次</span>
-              )}
           </div>
-        )}
-
-        {word?.related_article_ids && word.related_article_ids.length > 1 && (
-          <RelatedArticles
-            currentArticleId={articleId}
-            relatedIds={word.related_article_ids}
-          />
         )}
 
         <div className="flex flex-col gap-2">
@@ -272,63 +227,6 @@ function ChallengeReveal({ onReveal }: { onReveal: () => void }) {
         />
         显示翻译
       </Button>
-    </div>
-  )
-}
-
-function MetaRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-        {label}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-interface RelatedArticlesProps {
-  currentArticleId: string
-  relatedIds: string[]
-}
-
-function RelatedArticles({
-  currentArticleId,
-  relatedIds,
-}: RelatedArticlesProps) {
-  const { data: articles = [] } = useQuery({
-    queryKey: ["articles", "list"],
-    queryFn: () => api.listArticles(),
-  })
-  const others = articles.filter(
-    (a) => relatedIds.includes(a.id) && a.id !== currentArticleId
-  )
-  if (others.length === 0) return null
-  return (
-    <div className="space-y-1 border-t border-border/60 pt-2">
-      <div className="text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase">
-        也在这些文章里
-      </div>
-      <ul className="space-y-1">
-        {others.slice(0, 3).map((a) => (
-          <li key={a.id}>
-            <Link
-              to={`/articles/${a.id}`}
-              className="group flex items-baseline gap-2 text-xs leading-snug"
-            >
-              <span className="truncate font-medium group-hover:underline">
-                {a.title}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
     </div>
   )
 }

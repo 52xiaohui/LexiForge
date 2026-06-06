@@ -115,7 +115,6 @@ export function Dashboard() {
             </div>
             <NextAction
               summary={summary}
-              progress={undefined}
               unreadArticle={unreadArticle ?? null}
               isLoading={isSummaryPending}
               isSyncing={sync.isPending}
@@ -141,7 +140,6 @@ export function Dashboard() {
               hint="同步自墨墨学习记录"
               icon={Book02Icon}
               tone="accent"
-              trend={summary?.total_trend}
             />
             <StatCard
               label="薄弱词数量"
@@ -149,7 +147,6 @@ export function Dashboard() {
               hint={`占总词量 ${weakPct}%`}
               icon={AlertCircleIcon}
               tone="warning"
-              trend={summary?.weak_trend}
             />
             <StatCard
               label="最近同步"

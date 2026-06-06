@@ -20,8 +20,6 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { api } from "@/lib/api"
-import { mockStore } from "@/lib/mock-data"
-import type { ParagraphFeedback as ParagraphFeedbackValue } from "@/lib/mock-data"
 import { withSim } from "@/lib/query-sim"
 import type {
   ArticleDetail as ArticleDetailType,
@@ -32,6 +30,7 @@ import type {
 import { ArticleBody } from "./components/ArticleBody"
 import { CoverageDrawer } from "./components/CoverageDrawer"
 import { FinishBar } from "./components/FinishBar"
+import type { ParagraphFeedbackValue } from "./components/ParagraphFeedback"
 import { MobileReadingBar, ReadingToolbar } from "./components/ReadingToolbar"
 import { ReadingProgress } from "./components/ReadingProgress"
 import { ReviewSheet } from "./components/ReviewSheet"
@@ -59,8 +58,7 @@ export function ArticleDetail() {
     enabled: Boolean(id),
   })
 
-  // Load the full vocab index so the popover can enrich each target word with
-  // synonyms / example_sentence / related articles that `article_words` lacks.
+  // Load the vocab index so target popovers can show current learning signals.
   const { data: words = [] } = useQuery({
     queryKey: ["vocab", "words"],
     queryFn: () => api.listWords(),
@@ -101,6 +99,24 @@ export function ArticleDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["articles"] })
     },
+  })
+
+  const updateProgress = useMutation({
+    mutationFn: async ({
+      articleId,
+      paragraphIdx,
+      progressPercent,
+    }: {
+      articleId: string
+      paragraphIdx: number
+      progressPercent: number
+    }) =>
+      api.updateArticleProgress(articleId, {
+        status: "reading",
+        progress_percent: progressPercent,
+        last_paragraph_index: paragraphIdx,
+      }),
+    meta: { silent: true },
   })
 
   const markMastered = useMutation({
@@ -243,32 +259,55 @@ export function ArticleDetail() {
   }
 
   // ---------- per-paragraph feedback ----------
-  // Mirror the in-memory store into local state so we can re-render on
-  // change without forcing a TanStack invalidation. Reset on article change
-  // via the same render-time pattern so we don't pay an extra effect tick.
+  // This is an in-page reading aid only. Durable learning signals are recorded
+  // through word-events, while durable location lives in article progress.
   const [feedback, setFeedback] = useState<
     Record<number, ParagraphFeedbackValue>
-  >(() => (article ? mockStore.getParagraphFeedback(article.id) : {}))
+  >({})
   const [feedbackArticleId, setFeedbackArticleId] = useState(
     article?.id ?? null
   )
   if (article && article.id !== feedbackArticleId) {
     setFeedbackArticleId(article.id)
-    setFeedback(mockStore.getParagraphFeedback(article.id))
+    setFeedback({})
   }
   const handleFeedbackChange = (
     paragraphIdx: number,
     value: ParagraphFeedbackValue | null
   ) => {
     if (!article) return
-    mockStore.setParagraphFeedback(article.id, paragraphIdx, value)
-    setFeedback(mockStore.getParagraphFeedback(article.id))
+    setFeedback((prev) => {
+      const next = { ...prev }
+      if (value) next[paragraphIdx] = value
+      else delete next[paragraphIdx]
+      return next
+    })
   }
 
   // ---------- last-read paragraph anchor + auto-resume ----------
+  const trackedProgressRef = useRef<{
+    articleId: string
+    paragraphIdx: number
+  } | null>(null)
   const handleParagraphReached = (paragraphIdx: number) => {
     if (!article) return
-    mockStore.setLastParagraph(article.id, paragraphIdx)
+    if (article.read) return
+    const previous = trackedProgressRef.current
+    if (previous?.articleId === article.id && paragraphIdx <= previous.paragraphIdx) {
+      return
+    }
+    const paragraphCount = parsed.paragraphs.length
+    if (paragraphCount === 0) return
+    const progressPercent = Math.min(
+      99,
+      Math.max(1, Math.round(((paragraphIdx + 1) / paragraphCount) * 100))
+    )
+    trackedProgressRef.current = { articleId: article.id, paragraphIdx }
+    updateProgress.mutate({
+      articleId: article.id,
+      paragraphIdx,
+      progressPercent,
+    })
   }
 
   // Resume on first article load: if the bookmark is past the first paragraph
@@ -278,8 +317,12 @@ export function ArticleDetail() {
   const resumedRef = useRef<string | null>(null)
   useEffect(() => {
     if (!article) return
+    const last = article.progress?.last_paragraph_index
+    trackedProgressRef.current = {
+      articleId: article.id,
+      paragraphIdx: last ?? -1,
+    }
     if (resumedRef.current === article.id) return
-    const last = mockStore.getLastParagraph(article.id)
     if (last == null || last <= 0) {
       resumedRef.current = article.id
       return

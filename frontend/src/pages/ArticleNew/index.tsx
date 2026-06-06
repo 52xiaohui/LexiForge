@@ -15,7 +15,6 @@ import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { SectionPanel } from "@/components/common/SectionPanel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -116,7 +115,6 @@ export function ArticleNew() {
     useState<ArticleLength>(defaultLength)
   const [count, setCount] = useState(defaultCount)
   const [countTouched, setCountTouched] = useState(false)
-  const [simulateFailure, setSimulateFailure] = useState(false)
 
   // Re-derive defaults when URL ids change or length changes (without effects).
   const [lastIds, setLastIds] = useState(rawIds)
@@ -193,7 +191,6 @@ export function ArticleNew() {
       target_word_count: count,
       article_length: articleLength,
       ...(n > 0 ? { target_word_ids: targetIds } : {}),
-      ...(simulateFailure ? { simulate_failure: true } : {}),
     }
     generate.mutate(input)
   }
@@ -348,16 +345,6 @@ export function ArticleNew() {
                   <span>{MAX_COUNT}</span>
                 </div>
               </div>
-
-              {import.meta.env.DEV && (
-                <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Checkbox
-                    checked={simulateFailure}
-                    onCheckedChange={(v) => setSimulateFailure(v === true)}
-                  />
-                  模拟生成失败（调试用）
-                </Label>
-              )}
             </div>
           </SectionPanel>
         </div>

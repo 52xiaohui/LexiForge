@@ -43,7 +43,7 @@ type repository interface {
 	GetArticle(ctx context.Context, userID, articleID uuid.UUID) (ArticleDetail, error)
 	DeleteArticle(ctx context.Context, userID, articleID uuid.UUID) error
 	GetArticleProgress(ctx context.Context, userID, articleID uuid.UUID) (UserArticleProgress, bool, error)
-	UpsertArticleProgress(ctx context.Context, progress UserArticleProgress) (UserArticleProgress, error)
+	UpsertArticleProgressWithExposures(ctx context.Context, progress UserArticleProgress, recordExposures bool) (UserArticleProgress, error)
 }
 
 type GenerateRequest struct {
@@ -283,11 +283,16 @@ func (s *Service) UpdateProgress(ctx context.Context, id string, req ArticleProg
 	if err != nil {
 		return ArticleProgressResponse{}, err
 	}
+	previous, hasPrevious, err := s.repo.GetArticleProgress(ctx, userID, detail.Article.ID)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
 	progress, err := normalizeProgressRequest(userID, detail.Article.ID, req)
 	if err != nil {
 		return ArticleProgressResponse{}, err
 	}
-	progress, err = s.repo.UpsertArticleProgress(ctx, progress)
+	recordExposures := progress.Status == ArticleProgressRead && (!hasPrevious || previous.Status != ArticleProgressRead)
+	progress, err = s.repo.UpsertArticleProgressWithExposures(ctx, progress, recordExposures)
 	if err != nil {
 		return ArticleProgressResponse{}, err
 	}

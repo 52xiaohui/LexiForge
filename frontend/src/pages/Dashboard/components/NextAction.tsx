@@ -3,7 +3,6 @@ import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   BookOpen02Icon,
-  CheckmarkCircle02Icon,
   SparklesIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
@@ -17,11 +16,10 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { cn } from "@/lib/utils"
-import type { Article, TodayProgress, VocabSummary } from "@/types/api"
+import type { Article, VocabSummary } from "@/types/api"
 
 export interface NextActionProps {
   summary: VocabSummary | undefined
-  progress: TodayProgress | undefined
   unreadArticle: Article | null | undefined
   isSyncing?: boolean
   syncCooldownRemaining?: number
@@ -34,8 +32,8 @@ export interface NextActionProps {
   isLoading?: boolean
 }
 
-type Tone = "primary" | "sync" | "generate" | "done"
-type PlanId = "sync" | "continue" | "weak" | "done" | "generate"
+type Tone = "primary" | "sync" | "generate"
+type PlanId = "sync" | "continue" | "weak" | "generate"
 
 interface Plan {
   id: PlanId
@@ -78,12 +76,6 @@ const toneStyles: Record<
     icon: "bg-destructive/10 text-destructive",
     eyebrow: "text-destructive",
     button: "default",
-  },
-  done: {
-    card: "bg-card ring-1 ring-foreground/10",
-    icon: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    eyebrow: "text-muted-foreground",
-    button: "outline",
   },
 }
 
@@ -152,23 +144,6 @@ function weakPlan(weakCount: number): Plan {
   }
 }
 
-function donePlan(progress: TodayProgress): Plan {
-  const practiced = progress.practiced ?? 0
-  const target = progress.target ?? 0
-  return {
-    id: "done",
-    tone: "done",
-    icon: CheckmarkCircle02Icon,
-    eyebrow: "今日目标已完成",
-    headline: "太稳了。要不要回顾一下历史？",
-    description: `今天已经背了 ${practiced} / ${target} 个词。可以重读前几篇文章，或者去看薄弱词里还剩哪些硬骨头。`,
-    primaryLabel: "查看文章历史",
-    primaryTo: "/articles",
-    secondaryLabel: "盘点薄弱词",
-    secondaryTo: "/vocab/weak",
-  }
-}
-
 function generatePlan(): Plan {
   return {
     id: "generate",
@@ -187,7 +162,6 @@ function generatePlan(): Plan {
 
 function computeRecommendedPlan(
   summary: VocabSummary | undefined,
-  progress: TodayProgress | undefined,
   unread: Article | null | undefined
 ): Plan {
   // 1. Stale sync takes highest priority: without fresh data nothing else is useful.
@@ -200,21 +174,15 @@ function computeRecommendedPlan(
   const weakCount = summary?.weak ?? 0
   if (weakCount >= 20) return weakPlan(weakCount)
 
-  // 4. Hit daily target → surface history / review.
-  const practiced = progress?.practiced ?? 0
-  const target = progress?.target ?? 0
-  if (target > 0 && practiced >= target && progress) return donePlan(progress)
-
-  // 5. Default: nudge to generate something.
+  // 4. Default: nudge to generate something.
   return generatePlan()
 }
 
 function computeCandidatePlans(
   summary: VocabSummary | undefined,
-  progress: TodayProgress | undefined,
   unread: Article | null | undefined
 ): Plan[] {
-  const recommended = computeRecommendedPlan(summary, progress, unread)
+  const recommended = computeRecommendedPlan(summary, unread)
   const candidates: Plan[] = []
 
   if (isSyncStale(summary)) candidates.push(syncPlan(summary))
@@ -222,12 +190,6 @@ function computeCandidatePlans(
 
   const weakCount = summary?.weak ?? 0
   if (weakCount > 0) candidates.push(weakPlan(weakCount))
-
-  const practiced = progress?.practiced ?? 0
-  const target = progress?.target ?? 0
-  if (target > 0 && practiced >= target && progress) {
-    candidates.push(donePlan(progress))
-  }
 
   candidates.push(generatePlan())
 
@@ -239,7 +201,6 @@ function computeCandidatePlans(
 
 export function NextAction({
   summary,
-  progress,
   unreadArticle,
   isLoading,
   isSyncing = false,
@@ -247,16 +208,23 @@ export function NextAction({
   onSync,
 }: NextActionProps) {
   const plans = useMemo(
-    () => computeCandidatePlans(summary, progress, unreadArticle),
-    [summary, progress, unreadArticle]
+    () => computeCandidatePlans(summary, unreadArticle),
+    [summary, unreadArticle]
   )
-  const [activeIndex, setActiveIndex] = useState(0)
+  const planSignature = `${plans[0]?.id ?? "none"}:${plans.length}`
+  const [carousel, setCarousel] = useState({
+    activeIndex: 0,
+    planSignature,
+  })
+  if (carousel.planSignature !== planSignature) {
+    setCarousel({ activeIndex: 0, planSignature })
+  }
+  const activeIndex = Math.min(carousel.activeIndex, plans.length - 1)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    setActiveIndex(0)
     scrollerRef.current?.scrollTo({ left: 0 })
-  }, [plans[0]?.id, plans.length])
+  }, [planSignature])
 
   // While the summary is still loading we can't tell whether the user is in
   // the "sync stale" branch or not. Render a neutral skeleton to avoid a
@@ -284,7 +252,7 @@ export function NextAction({
 
   const goToPlan = (index: number) => {
     const next = Math.max(0, Math.min(plans.length - 1, index))
-    setActiveIndex(next)
+    setCarousel({ activeIndex: next, planSignature })
     const scroller = scrollerRef.current
     const card = scroller?.querySelector<HTMLElement>(
       `[data-plan-card="${next}"]`
@@ -315,7 +283,9 @@ export function NextAction({
         bestIdx = idx
       }
     })
-    if (bestIdx !== activeIndex) setActiveIndex(bestIdx)
+    if (bestIdx !== activeIndex) {
+      setCarousel({ activeIndex: bestIdx, planSignature })
+    }
   }
 
   return (

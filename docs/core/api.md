@@ -22,7 +22,7 @@ All endpoints are under:
 | `POST` | `/word-events` | Record word learning event |
 | `POST` | `/articles/generate` | Generate and save article |
 | `POST` | `/articles/:id/regenerate` | Regenerate from stored generation params |
-| `GET` | `/articles` | Article list |
+| `GET` | `/articles` | Article list, including current user's progress status |
 | `GET` | `/articles/:id` | Article detail |
 | `DELETE` | `/articles/:id` | Soft delete article |
 | `GET` | `/articles/:id/export.md` | Backend Markdown export |
@@ -190,6 +190,35 @@ The backend reads the source article's `generation_params`, reuses the stored `t
 ## Article Detail
 
 ```text
+GET /articles
+```
+
+List items include the current user's reading progress when it exists:
+
+```json
+{
+  "items": [
+    {
+      "id": "uuid",
+      "title": "...",
+      "topic": "...",
+      "difficulty": "B1",
+      "article_length": "medium",
+      "target_word_count": 30,
+      "covered_word_count": 29,
+      "coverage_rate": 0.9667,
+      "progress_status": "reading",
+      "progress_percent": 45,
+      "last_paragraph_index": 6
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 50
+}
+```
+
+```text
 GET /articles/:id
 ```
 
@@ -230,7 +259,9 @@ Update request:
 }
 ```
 
-When status first changes to `read`, the backend may create `exposed_in_article` events for covered target words.
+When status first changes to `read`, the backend creates one
+`exposed_in_article` event for each covered target word in the article. Repeated
+`read` updates do not duplicate those exposure events.
 
 ## Later Endpoints
 

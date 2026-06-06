@@ -207,10 +207,7 @@ export function VocabWeak() {
     },
   })
 
-  const visible = useMemo(() => {
-    let rows = loadedWords.slice()
-    return rows
-  }, [loadedWords])
+  const visible = useMemo(() => loadedWords.slice(), [loadedWords])
 
   const selectedCount = selected.size
   const overLimit = selectedCount > MAX_SELECTION

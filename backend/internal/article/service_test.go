@@ -12,12 +12,13 @@ import (
 )
 
 type fakeArticleRepo struct {
-	targets     []TargetWordRecord
-	selectedIDs []uuid.UUID
-	saved       ArticleDraft
-	detail      ArticleDetail
-	progress    UserArticleProgress
-	hasProgress bool
+	targets        []TargetWordRecord
+	selectedIDs    []uuid.UUID
+	saved          ArticleDraft
+	detail         ArticleDetail
+	progress       UserArticleProgress
+	hasProgress    bool
+	exposureWrites int
 }
 
 func (f *fakeArticleRepo) SelectTargetWords(_ context.Context, _ uuid.UUID, selectedIDs []uuid.UUID, _ int) ([]TargetWordRecord, error) {
@@ -58,10 +59,13 @@ func (f *fakeArticleRepo) GetArticleProgress(context.Context, uuid.UUID, uuid.UU
 	return f.progress, f.hasProgress, nil
 }
 
-func (f *fakeArticleRepo) UpsertArticleProgress(_ context.Context, progress UserArticleProgress) (UserArticleProgress, error) {
+func (f *fakeArticleRepo) UpsertArticleProgressWithExposures(_ context.Context, progress UserArticleProgress, recordExposures bool) (UserArticleProgress, error) {
 	f.progress = progress
 	f.hasProgress = true
 	f.progress.ID = uuid.New()
+	if recordExposures {
+		f.exposureWrites++
+	}
 	return f.progress, nil
 }
 
@@ -258,6 +262,29 @@ func TestUpdateProgressMarksArticleRead(t *testing.T) {
 	}
 	if repo.progress.CompletedAt == nil {
 		t.Fatalf("completed_at = nil, want set")
+	}
+	if repo.exposureWrites != 1 {
+		t.Fatalf("exposure writes = %d, want 1", repo.exposureWrites)
+	}
+}
+
+func TestUpdateProgressDoesNotDuplicateReadExposures(t *testing.T) {
+	articleID := uuid.New()
+	repo := &fakeArticleRepo{
+		detail:      ArticleDetail{Article: Article{ID: articleID}},
+		progress:    UserArticleProgress{ArticleID: articleID, Status: ArticleProgressRead, ProgressPercent: 100},
+		hasProgress: true,
+	}
+	svc := NewService(repo, &fakeAIClient{})
+
+	_, err := svc.UpdateProgress(context.Background(), articleID.String(), ArticleProgressRequest{
+		Status: ArticleProgressRead,
+	})
+	if err != nil {
+		t.Fatalf("UpdateProgress returned error: %v", err)
+	}
+	if repo.exposureWrites != 0 {
+		t.Fatalf("exposure writes = %d, want 0 for already-read article", repo.exposureWrites)
 	}
 }
 
