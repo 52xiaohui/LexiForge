@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 
 import {
-  Activity03Icon,
   AlertCircleIcon,
   ArrowRight01Icon,
   Book02Icon,
@@ -18,7 +17,6 @@ import { toast } from "sonner"
 
 import { StatCard } from "@/components/common/StatCard"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import {
   formatAbsoluteTime,
   formatCount,
@@ -41,10 +39,6 @@ export function Dashboard() {
   const { data: summary, isPending: isSummaryPending } = useQuery({
     queryKey: ["vocab", "summary"],
     queryFn: () => api.vocabSummary(),
-  })
-  const { data: progress } = useQuery({
-    queryKey: ["progress", "today"],
-    queryFn: () => api.todayProgress(),
   })
   const { data: articles } = useQuery({
     queryKey: ["articles", "recent"],
@@ -100,11 +94,7 @@ export function Dashboard() {
   const total = summary?.total ?? 0
   const weak = summary?.weak ?? 0
   const weakPct = total > 0 ? Math.round((weak / total) * 100) : 0
-  const practiced = progress?.practiced ?? 0
-  const target = progress?.target ?? 0
-  const progressPct = target > 0 ? Math.round((practiced / target) * 100) : 0
   const lastSync = summary?.last_synced_at ?? null
-  const streakDays = progress?.streak_days ?? 0
 
   // First-run state: no vocab yet means the backend hasn't seen a sync. We
   // surface a dedicated onboarding card and hide the zero-filled StatCards to
@@ -125,7 +115,7 @@ export function Dashboard() {
             </div>
             <NextAction
               summary={summary}
-              progress={progress}
+              progress={undefined}
               unreadArticle={unreadArticle ?? null}
               isLoading={isSummaryPending}
               isSyncing={sync.isPending}
@@ -141,14 +131,10 @@ export function Dashboard() {
             total={formatCount(total)}
             weak={formatCount(weak)}
             weakPct={weakPct}
-            practiced={practiced}
-            target={target}
-            progressPct={progressPct}
-            streakDays={streakDays}
             lastSync={lastSync}
           />
 
-          <section className="hidden gap-4 sm:grid sm:grid-cols-2 xl:grid-cols-4">
+          <section className="hidden gap-4 sm:grid sm:grid-cols-3">
             <StatCard
               label="总单词数"
               value={formatCount(total)}
@@ -164,29 +150,6 @@ export function Dashboard() {
               icon={AlertCircleIcon}
               tone="warning"
               trend={summary?.weak_trend}
-            />
-            <StatCard
-              label="今日进度"
-              value={
-                <span>
-                  {practiced}
-                  <span className="text-base font-normal text-muted-foreground">
-                    {" "}
-                    / {target}
-                  </span>
-                </span>
-              }
-              hint={
-                target > 0
-                  ? streakDays > 0
-                    ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
-                    : `已练 ${progressPct}%`
-                  : streakDays > 0
-                    ? `今天还没有目标 · 连续 ${streakDays} 天`
-                    : "今天还没有目标"
-              }
-              icon={Activity03Icon}
-              footer={<Progress value={progressPct} className="h-1.5" />}
             />
             <StatCard
               label="最近同步"
@@ -302,10 +265,6 @@ interface MobileStatStripProps {
   total: string
   weak: string
   weakPct: number
-  practiced: number
-  target: number
-  progressPct: number
-  streakDays: number
   lastSync: string | null
 }
 
@@ -318,10 +277,6 @@ function MobileStatStrip({
   total,
   weak,
   weakPct,
-  practiced,
-  target,
-  progressPct,
-  streakDays,
   lastSync,
 }: MobileStatStripProps) {
   return (
@@ -340,28 +295,7 @@ function MobileStatStrip({
           hint={`占 ${weakPct}%`}
         />
         <StatCell
-          className="border-r border-border/60"
-          label="今日进度"
-          value={
-            <span>
-              {practiced}
-              <span className="text-sm font-normal text-muted-foreground">
-                {" "}
-                / {target}
-              </span>
-            </span>
-          }
-          hint={
-            target > 0
-              ? streakDays > 0
-                ? `已练 ${progressPct}% · 连续 ${streakDays} 天`
-                : `已练 ${progressPct}%`
-              : streakDays > 0
-                ? `连续 ${streakDays} 天`
-                : "暂无目标"
-          }
-        />
-        <StatCell
+          className="col-span-2"
           label="最近同步"
           value={
             <span className="text-xl">{formatRelativeTime(lastSync)}</span>

@@ -9,11 +9,15 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
-	weakListMinWeakScore = 50
-	weakListMaxMastery   = 60
+	weakListMinWeakScore     = 50
+	weakListMaxMastery       = 60
+	recognizedInContextEvent = "recognized_in_context"
+	failedInContextEvent     = "failed_in_context"
+	manuallyMasteredEvent    = "manually_mastered"
 )
 
 // Repository owns the GORM access for vocab_words and study_records.
@@ -59,6 +63,12 @@ type RecordRow struct {
 	WeakScore      int            `json:"weak_score"`
 	ScoreVersion   string         `json:"score_version"`
 	ScoreReasons   datatypes.JSON `json:"score_reasons"`
+	Ignored        bool           `json:"ignored"`
+	IgnoredReason  *string        `json:"ignored_reason,omitempty"`
+	IgnoredUntil   *time.Time     `json:"ignored_until,omitempty"`
+	Pinned         bool           `json:"pinned"`
+	Recognized     bool           `json:"recognized"`
+	Mastered       bool           `json:"mastered"`
 	LastScoredAt   *time.Time     `json:"last_scored_at,omitempty"`
 	SyncedAt       *time.Time     `json:"synced_at,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
@@ -106,6 +116,7 @@ func (r *Repository) GetRecord(userID, id uuid.UUID) (RecordRow, error) {
 	err := r.db.Table("study_records AS sr").
 		Select(recordSelectColumns()).
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
+		Joins("LEFT JOIN user_word_preferences AS uwp ON uwp.user_id = sr.user_id AND uwp.word_id = sr.word_id").
 		Joins(dictionaryTranslationJoin("vw.spelling")).
 		Where("sr.user_id = ? AND sr.id = ?", userID, id).
 		First(&row).Error
@@ -114,6 +125,34 @@ func (r *Repository) GetRecord(userID, id uuid.UUID) (RecordRow, error) {
 	}
 	if err != nil {
 		return RecordRow{}, err
+	}
+	return row, nil
+}
+
+func (r *Repository) UpsertPreference(userID, wordID uuid.UUID, input PreferenceInput) (UserWordPreference, error) {
+	row := UserWordPreference{
+		UserID:        userID,
+		WordID:        wordID,
+		Ignored:       input.Ignored,
+		IgnoredReason: input.IgnoredReason,
+		IgnoredUntil:  input.IgnoredUntil,
+		Pinned:        input.Pinned,
+	}
+	err := r.db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "word_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"ignored",
+			"ignored_reason",
+			"ignored_until",
+			"pinned",
+			"updated_at",
+		}),
+	}).Create(&row).Error
+	if err != nil {
+		return UserWordPreference{}, err
+	}
+	if err := r.db.Where("user_id = ? AND word_id = ?", userID, wordID).First(&row).Error; err != nil {
+		return UserWordPreference{}, err
 	}
 	return row, nil
 }
@@ -127,10 +166,26 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 	if err := r.db.Model(&StudyRecord{}).Where("user_id = ?", userID).Count(&summary.Total).Error; err != nil {
 		return Summary{}, err
 	}
-	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND (weak_score >= ? OR mastery_score < ?)", userID, weakListMinWeakScore, weakListMaxMastery).Count(&summary.WeakCount).Error; err != nil {
+	activePreferenceSQL := `NOT EXISTS (
+		SELECT 1 FROM user_word_preferences AS uwp
+		WHERE uwp.user_id = study_records.user_id
+			AND uwp.word_id = study_records.word_id
+			AND uwp.ignored = true
+	)`
+	notManuallyMasteredSQL := `NOT EXISTS (
+		SELECT 1 FROM word_learning_events AS wle
+		WHERE wle.user_id = study_records.user_id
+			AND wle.word_id = study_records.word_id
+			AND wle.event_type = '` + manuallyMasteredEvent + `'
+	)`
+	if err := r.db.Model(&StudyRecord{}).
+		Where("user_id = ? AND (weak_score >= ? OR mastery_score < ?)", userID, weakListMinWeakScore, weakListMaxMastery).
+		Where(activePreferenceSQL).
+		Where(notManuallyMasteredSQL).
+		Count(&summary.WeakCount).Error; err != nil {
 		return Summary{}, err
 	}
-	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND tags @> ?::jsonb", userID, `["STICKING"]`).Count(&summary.StickingCount).Error; err != nil {
+	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND tags @> ?::jsonb", userID, `["STICKING"]`).Where(activePreferenceSQL).Where(notManuallyMasteredSQL).Count(&summary.StickingCount).Error; err != nil {
 		return Summary{}, err
 	}
 	if err := r.db.Model(&StudyRecord{}).Where("user_id = ? AND next_study_date <= ?", userID, time.Now()).Count(&summary.NextStudyDueCount).Error; err != nil {
@@ -187,6 +242,7 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 	query := r.db.Table("study_records AS sr").
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
+		Joins("LEFT JOIN user_word_preferences AS uwp ON uwp.user_id = sr.user_id AND uwp.word_id = sr.word_id").
 		Joins(dictionaryTranslationJoin("vw.spelling")).
 		Where("sr.user_id = ?", opts.UserID)
 	if opts.Search != "" {
@@ -221,6 +277,15 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 	if opts.WeakOnly && opts.MinWeakScore == nil {
 		query = query.Where("(sr.weak_score >= ? OR sr.mastery_score < ?)", weakListMinWeakScore, weakListMaxMastery)
 	}
+	if opts.WeakOnly {
+		query = query.Where("COALESCE(uwp.ignored, false) = false")
+		query = query.Where(`NOT EXISTS (
+			SELECT 1 FROM word_learning_events AS wle
+			WHERE wle.user_id = sr.user_id
+				AND wle.word_id = sr.word_id
+				AND wle.event_type = ?
+		)`, manuallyMasteredEvent)
+	}
 	return query
 }
 
@@ -230,6 +295,23 @@ func recordSelectColumns() string {
 		sr.last_response, sr.study_count, sr.tags, sr.add_date,
 		sr.first_study_date, sr.last_study_date, sr.next_study_date,
 		sr.mastery_score, sr.weak_score, sr.score_version, sr.score_reasons,
+		COALESCE(uwp.ignored, false) AS ignored, uwp.ignored_reason, uwp.ignored_until,
+		COALESCE(uwp.pinned, false) AS pinned,
+		COALESCE((
+			SELECT wle.event_type
+			FROM word_learning_events AS wle
+			WHERE wle.user_id = sr.user_id
+				AND wle.word_id = sr.word_id
+				AND wle.event_type IN ('` + recognizedInContextEvent + `', '` + failedInContextEvent + `')
+			ORDER BY wle.created_at DESC
+			LIMIT 1
+		) = '` + recognizedInContextEvent + `', false) AS recognized,
+		EXISTS (
+			SELECT 1 FROM word_learning_events AS wle
+			WHERE wle.user_id = sr.user_id
+				AND wle.word_id = sr.word_id
+				AND wle.event_type = '` + manuallyMasteredEvent + `'
+		) AS mastered,
 		sr.last_scored_at, sr.synced_at, sr.created_at, sr.updated_at`
 }
 

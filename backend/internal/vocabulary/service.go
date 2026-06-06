@@ -14,11 +14,18 @@ import (
 
 // Service holds the business logic for vocabulary operations.
 type Service struct {
-	repo *Repository
+	repo repository
 }
 
 // NewService is the canonical constructor (used by NewModule and tests).
-func NewService(repo *Repository) *Service { return &Service{repo: repo} }
+func NewService(repo repository) *Service { return &Service{repo: repo} }
+
+type repository interface {
+	ListRecords(opts ListOptions) (ListResult, error)
+	GetRecord(userID, id uuid.UUID) (RecordRow, error)
+	Summary(userID uuid.UUID) (Summary, error)
+	UpsertPreference(userID, wordID uuid.UUID, input PreferenceInput) (UserWordPreference, error)
+}
 
 var (
 	ErrRecordNotFound = errors.New("vocabulary record not found")
@@ -55,8 +62,39 @@ type Record struct {
 	WeakScore      int            `json:"weak_score"`
 	ScoreVersion   string         `json:"score_version"`
 	ScoreReasons   map[string]int `json:"score_reasons"`
+	Ignored        bool           `json:"ignored"`
+	IgnoredReason  *string        `json:"ignored_reason,omitempty"`
+	IgnoredUntil   *time.Time     `json:"ignored_until,omitempty"`
+	Pinned         bool           `json:"pinned"`
+	Recognized     bool           `json:"recognized"`
+	Mastered       bool           `json:"mastered"`
 	LastScoredAt   *time.Time     `json:"last_scored_at,omitempty"`
 	SyncedAt       *time.Time     `json:"synced_at,omitempty"`
+}
+
+type PreferenceInput struct {
+	Ignored       bool
+	IgnoredReason *string
+	IgnoredUntil  *time.Time
+	Pinned        bool
+}
+
+type PreferenceRequest struct {
+	Ignored       *bool      `json:"ignored"`
+	IgnoredReason *string    `json:"ignored_reason"`
+	IgnoredUntil  *time.Time `json:"ignored_until"`
+	Pinned        *bool      `json:"pinned"`
+}
+
+type PreferenceResponse struct {
+	ID            uuid.UUID  `json:"id"`
+	UserID        uuid.UUID  `json:"user_id"`
+	WordID        uuid.UUID  `json:"word_id"`
+	Ignored       bool       `json:"ignored"`
+	IgnoredReason *string    `json:"ignored_reason,omitempty"`
+	IgnoredUntil  *time.Time `json:"ignored_until,omitempty"`
+	Pinned        bool       `json:"pinned"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type PagedRecords struct {
@@ -88,6 +126,30 @@ func (s *Service) GetByID(id string) (Record, error) {
 		return Record{}, err
 	}
 	return mapRecord(row)
+}
+
+func (s *Service) UpdatePreference(id string, req PreferenceRequest) (PreferenceResponse, error) {
+	recordID, err := uuid.Parse(id)
+	if err != nil {
+		return PreferenceResponse{}, fmt.Errorf("%w: invalid id", ErrInvalidQuery)
+	}
+	userID, err := localUserUUID()
+	if err != nil {
+		return PreferenceResponse{}, err
+	}
+	row, err := s.repo.GetRecord(userID, recordID)
+	if err != nil {
+		return PreferenceResponse{}, err
+	}
+	input, err := normalizePreferenceRequest(req)
+	if err != nil {
+		return PreferenceResponse{}, err
+	}
+	pref, err := s.repo.UpsertPreference(userID, row.WordID, input)
+	if err != nil {
+		return PreferenceResponse{}, err
+	}
+	return mapPreference(pref), nil
 }
 
 func (s *Service) Summary() (Summary, error) {
@@ -167,6 +229,37 @@ func normalizeQuery(q Query) (Query, error) {
 	return q, nil
 }
 
+func normalizePreferenceRequest(req PreferenceRequest) (PreferenceInput, error) {
+	ignored := false
+	if req.Ignored != nil {
+		ignored = *req.Ignored
+	}
+	pinned := false
+	if req.Pinned != nil {
+		pinned = *req.Pinned
+	}
+	var reason *string
+	var until *time.Time
+	if ignored {
+		if req.IgnoredReason != nil {
+			value := strings.TrimSpace(*req.IgnoredReason)
+			if len(value) > 64 {
+				return PreferenceInput{}, fmt.Errorf("%w: ignored_reason must be 64 characters or fewer", ErrInvalidQuery)
+			}
+			if value != "" {
+				reason = &value
+			}
+		}
+		until = req.IgnoredUntil
+	}
+	return PreferenceInput{
+		Ignored:       ignored,
+		IgnoredReason: reason,
+		IgnoredUntil:  until,
+		Pinned:        pinned,
+	}, nil
+}
+
 func mapRecord(row RecordRow) (Record, error) {
 	tags := []string{}
 	if len(row.Tags) > 0 {
@@ -199,9 +292,28 @@ func mapRecord(row RecordRow) (Record, error) {
 		WeakScore:      row.WeakScore,
 		ScoreVersion:   row.ScoreVersion,
 		ScoreReasons:   reasons,
+		Ignored:        row.Ignored,
+		IgnoredReason:  row.IgnoredReason,
+		IgnoredUntil:   row.IgnoredUntil,
+		Pinned:         row.Pinned,
+		Recognized:     row.Recognized,
+		Mastered:       row.Mastered,
 		LastScoredAt:   row.LastScoredAt,
 		SyncedAt:       row.SyncedAt,
 	}, nil
+}
+
+func mapPreference(row UserWordPreference) PreferenceResponse {
+	return PreferenceResponse{
+		ID:            row.ID,
+		UserID:        row.UserID,
+		WordID:        row.WordID,
+		Ignored:       row.Ignored,
+		IgnoredReason: row.IgnoredReason,
+		IgnoredUntil:  row.IgnoredUntil,
+		Pinned:        row.Pinned,
+		UpdatedAt:     row.UpdatedAt,
+	}
 }
 
 func localUserUUID() (uuid.UUID, error) {

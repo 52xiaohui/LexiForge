@@ -9,7 +9,7 @@ import (
 	"lexiforge/backend/internal/user"
 )
 
-// VocabWord mirrors the `vocab_words` table from docs/03-database.md.
+// VocabWord mirrors the `vocab_words` table from docs/core/data-model.md.
 // `unique(provider, provider_voc_id)` is the upsert key for sync/import flows.
 type VocabWord struct {
 	ID            uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -22,7 +22,7 @@ type VocabWord struct {
 
 func (VocabWord) TableName() string { return "vocab_words" }
 
-// StudyRecord mirrors the `study_records` table from docs/03-database.md.
+// StudyRecord mirrors the `study_records` table from docs/core/data-model.md.
 // `unique(user_id, provider, provider_voc_id)` keeps repeated syncs idempotent.
 type StudyRecord struct {
 	ID             uuid.UUID      `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -51,3 +51,22 @@ type StudyRecord struct {
 }
 
 func (StudyRecord) TableName() string { return "study_records" }
+
+// UserWordPreference stores LexiForge-local recommendation preferences for a
+// word. It is deliberately separate from StudyRecord because ignored/pinned is
+// a product preference, not an external learning fact.
+type UserWordPreference struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID        uuid.UUID  `gorm:"type:uuid;not null;index;uniqueIndex:uq_user_word_preferences_user_word" json:"user_id"`
+	WordID        uuid.UUID  `gorm:"type:uuid;not null;index;uniqueIndex:uq_user_word_preferences_user_word" json:"word_id"`
+	Ignored       bool       `gorm:"not null;default:false" json:"ignored"`
+	IgnoredReason *string    `gorm:"type:varchar(64)" json:"ignored_reason,omitempty"`
+	IgnoredUntil  *time.Time `json:"ignored_until,omitempty"`
+	Pinned        bool       `gorm:"not null;default:false" json:"pinned"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	User          user.User  `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Word          VocabWord  `gorm:"foreignKey:WordID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+}
+
+func (UserWordPreference) TableName() string { return "user_word_preferences" }

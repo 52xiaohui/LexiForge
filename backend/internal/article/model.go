@@ -5,12 +5,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"gorm.io/datatypes"
 
 	"lexiforge/backend/internal/user"
 	"lexiforge/backend/internal/vocabulary"
 )
 
-// Article mirrors the `articles` table from docs/03-database.md.
+// Article mirrors the `articles` table from docs/core/data-model.md.
 // MVP-only fields; ai_usage_logs / exercises are introduced later.
 type Article struct {
 	ID               uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -18,8 +19,10 @@ type Article struct {
 	Title            string          `gorm:"type:varchar(255);not null;default:''" json:"title"`
 	Topic            string          `gorm:"type:varchar(128);not null;default:''" json:"topic"`
 	Difficulty       string          `gorm:"type:varchar(32);not null;default:''" json:"difficulty"`
+	ArticleLength    string          `gorm:"type:varchar(16);not null;default:'medium'" json:"article_length"`
 	ContentMarkdown  string          `gorm:"type:text;not null;default:''" json:"content_markdown"`
 	Summary          string          `gorm:"type:text;not null;default:''" json:"summary"`
+	GenerationParams datatypes.JSON  `gorm:"type:jsonb;not null;default:'{}'" json:"generation_params"`
 	TargetWordCount  int             `gorm:"not null;default:0" json:"target_word_count"`
 	CoveredWordCount int             `gorm:"not null;default:0" json:"covered_word_count"`
 	CoverageRate     decimal.Decimal `gorm:"type:decimal(6,4);not null;default:0" json:"coverage_rate"`
@@ -34,7 +37,7 @@ type Article struct {
 
 func (Article) TableName() string { return "articles" }
 
-// ArticleWord mirrors the `article_words` table from docs/03-database.md.
+// ArticleWord mirrors the `article_words` table from docs/core/data-model.md.
 // Defensive `unique(article_id, word_id)` — duplicate inserts indicate a bug.
 type ArticleWord struct {
 	ID            uuid.UUID            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -55,3 +58,28 @@ type ArticleWord struct {
 }
 
 func (ArticleWord) TableName() string { return "article_words" }
+
+const (
+	ArticleProgressUnread  = "unread"
+	ArticleProgressReading = "reading"
+	ArticleProgressRead    = "read"
+)
+
+// UserArticleProgress stores per-user reading progress. Reading status is an
+// article-level signal; it does not imply target-word mastery.
+type UserArticleProgress struct {
+	ID                 uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID             uuid.UUID  `gorm:"type:uuid;not null;index;uniqueIndex:uq_user_article_progress_user_article" json:"user_id"`
+	ArticleID          uuid.UUID  `gorm:"type:uuid;not null;index;uniqueIndex:uq_user_article_progress_user_article" json:"article_id"`
+	Status             string     `gorm:"type:varchar(16);not null;default:'unread'" json:"status"`
+	ProgressPercent    int        `gorm:"not null;default:0" json:"progress_percent"`
+	LastParagraphIndex *int       `json:"last_paragraph_index,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	User               user.User  `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Article            Article    `gorm:"foreignKey:ArticleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+}
+
+func (UserArticleProgress) TableName() string { return "user_article_progress" }

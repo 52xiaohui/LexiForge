@@ -21,6 +21,7 @@ All endpoints are under:
 | `PUT` | `/vocab/:id/preferences` | Ignored/pinned preferences |
 | `POST` | `/word-events` | Record word learning event |
 | `POST` | `/articles/generate` | Generate and save article |
+| `POST` | `/articles/:id/regenerate` | Regenerate from stored generation params |
 | `GET` | `/articles` | Article list |
 | `GET` | `/articles/:id` | Article detail |
 | `DELETE` | `/articles/:id` | Soft delete article |
@@ -179,6 +180,12 @@ Response:
 ```
 
 Every generation creates a new `articles` row and new `article_words` rows. Regeneration reuses the previous article's `generation_params` and creates another article.
+
+```text
+POST /articles/:id/regenerate
+```
+
+The backend reads the source article's `generation_params`, reuses the stored `target_record_ids`, and creates a new article. The old article remains unchanged.
 
 ## Article Detail
 

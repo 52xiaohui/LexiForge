@@ -11,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Repository owns the GORM access for articles + article_words.
@@ -39,8 +40,10 @@ type ArticleDraft struct {
 	Title            string
 	Topic            string
 	Difficulty       string
+	ArticleLength    string
 	ContentMarkdown  string
 	Summary          string
+	GenerationParams datatypes.JSON
 	TargetWordCount  int
 	CoveredWordCount int
 	CoverageRate     decimal.Decimal
@@ -72,6 +75,7 @@ type ArticleListItem struct {
 	Title            string    `json:"title"`
 	Topic            string    `json:"topic"`
 	Difficulty       string    `json:"difficulty"`
+	ArticleLength    string    `json:"article_length"`
 	Summary          string    `json:"summary"`
 	TargetWordCount  int       `json:"target_word_count"`
 	CoveredWordCount int       `json:"covered_word_count"`
@@ -98,7 +102,7 @@ func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, se
 	seenWords := map[uuid.UUID]struct{}{}
 
 	if len(selectedIDs) > 0 {
-		rows, err := r.findTargetWords(ctx, userID, "sr.id IN ?", []any{selectedIDs}, len(selectedIDs))
+		rows, err := r.findTargetWords(ctx, userID, "sr.id IN ?", []any{selectedIDs}, len(selectedIDs), false)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +147,7 @@ func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, se
 		if limit <= 0 {
 			limit = targetCount - len(targets)
 		}
-		rows, err := r.findTargetWords(ctx, userID, plan.where, plan.args, limit+len(seenWords))
+		rows, err := r.findTargetWords(ctx, userID, plan.where, plan.args, limit+len(seenWords), true)
 		if err != nil {
 			return nil, err
 		}
@@ -169,8 +173,10 @@ func (r *Repository) SaveGeneratedArticle(ctx context.Context, draft ArticleDraf
 			Title:            draft.Title,
 			Topic:            draft.Topic,
 			Difficulty:       draft.Difficulty,
+			ArticleLength:    draft.ArticleLength,
 			ContentMarkdown:  draft.ContentMarkdown,
 			Summary:          draft.Summary,
+			GenerationParams: draft.GenerationParams,
 			TargetWordCount:  draft.TargetWordCount,
 			CoveredWordCount: draft.CoveredWordCount,
 			CoverageRate:     draft.CoverageRate,
@@ -214,7 +220,7 @@ func (r *Repository) ListArticles(ctx context.Context, userID uuid.UUID, page, p
 		return ArticleListResult{}, err
 	}
 	var items []ArticleListItem
-	err := query.Select("id, title, topic, difficulty, summary, target_word_count, covered_word_count, coverage_rate, generation_status, model_name, created_at").
+	err := query.Select("id, title, topic, difficulty, article_length, summary, target_word_count, covered_word_count, coverage_rate, generation_status, model_name, created_at").
 		Order("created_at DESC").
 		Limit(pageSize).
 		Offset((page - 1) * pageSize).
@@ -262,7 +268,44 @@ func (r *Repository) DeleteArticle(ctx context.Context, userID, articleID uuid.U
 	return nil
 }
 
-func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, where string, args []any, limit int) ([]TargetWordRecord, error) {
+func (r *Repository) GetArticleProgress(ctx context.Context, userID, articleID uuid.UUID) (UserArticleProgress, bool, error) {
+	var row UserArticleProgress
+	err := r.db.WithContext(ctx).
+		Where("user_id = ? AND article_id = ?", userID, articleID).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return UserArticleProgress{}, false, nil
+	}
+	if err != nil {
+		return UserArticleProgress{}, false, err
+	}
+	return row, true, nil
+}
+
+func (r *Repository) UpsertArticleProgress(ctx context.Context, progress UserArticleProgress) (UserArticleProgress, error) {
+	err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "user_id"}, {Name: "article_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"status",
+			"progress_percent",
+			"last_paragraph_index",
+			"started_at",
+			"completed_at",
+			"updated_at",
+		}),
+	}).Create(&progress).Error
+	if err != nil {
+		return UserArticleProgress{}, err
+	}
+	if err := r.db.WithContext(ctx).
+		Where("user_id = ? AND article_id = ?", progress.UserID, progress.ArticleID).
+		First(&progress).Error; err != nil {
+		return UserArticleProgress{}, err
+	}
+	return progress, nil
+}
+
+func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, where string, args []any, limit int, excludeIgnored bool) ([]TargetWordRecord, error) {
 	var rows []struct {
 		RecordID      uuid.UUID      `gorm:"column:record_id"`
 		WordID        uuid.UUID      `gorm:"column:word_id"`
@@ -283,6 +326,20 @@ func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, wher
 		Where(where, args...).
 		Order("sr.weak_score DESC, sr.study_count DESC, sr.last_study_date DESC NULLS LAST, vw.spelling ASC").
 		Limit(limit)
+	if excludeIgnored {
+		query = query.Where(`NOT EXISTS (
+			SELECT 1 FROM user_word_preferences AS uwp
+			WHERE uwp.user_id = sr.user_id
+				AND uwp.word_id = sr.word_id
+				AND uwp.ignored = true
+		)`)
+		query = query.Where(`NOT EXISTS (
+			SELECT 1 FROM word_learning_events AS wle
+			WHERE wle.user_id = sr.user_id
+				AND wle.word_id = sr.word_id
+				AND wle.event_type = ?
+		)`, "manually_mastered")
+	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}

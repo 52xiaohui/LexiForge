@@ -26,8 +26,11 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g := rg.Group("/articles")
 	g.POST("/generate", h.Generate)
 	g.GET("", h.List)
+	g.GET("/:id/progress", h.GetProgress)
+	g.PUT("/:id/progress", h.UpdateProgress)
 	g.GET("/:id", h.Get)
 	g.DELETE("/:id", h.Delete)
+	g.POST("/:id/regenerate", h.Regenerate)
 	g.GET("/:id/export.md", h.ExportMarkdown)
 }
 
@@ -65,6 +68,26 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *Handler) GetProgress(c *gin.Context) {
+	result, err := h.svc.GetProgress(c.Request.Context(), c.Param("id"))
+	respond(c, result, err)
+}
+
+func (h *Handler) UpdateProgress(c *gin.Context) {
+	var req ArticleProgressRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Respond(c, http.StatusBadRequest, "INVALID_ARTICLE_PROGRESS_BODY", "article progress request body is invalid", nil)
+		return
+	}
+	result, err := h.svc.UpdateProgress(c.Request.Context(), c.Param("id"), req)
+	respond(c, result, err)
+}
+
+func (h *Handler) Regenerate(c *gin.Context) {
+	result, err := h.svc.Regenerate(c.Request.Context(), c.Param("id"))
+	respond(c, result, err)
 }
 
 func (h *Handler) ExportMarkdown(c *gin.Context) {

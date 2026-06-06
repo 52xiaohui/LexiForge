@@ -2,6 +2,7 @@ package article
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -11,11 +12,16 @@ import (
 )
 
 type fakeArticleRepo struct {
-	targets []TargetWordRecord
-	saved   ArticleDraft
+	targets     []TargetWordRecord
+	selectedIDs []uuid.UUID
+	saved       ArticleDraft
+	detail      ArticleDetail
+	progress    UserArticleProgress
+	hasProgress bool
 }
 
-func (f *fakeArticleRepo) SelectTargetWords(context.Context, uuid.UUID, []uuid.UUID, int) ([]TargetWordRecord, error) {
+func (f *fakeArticleRepo) SelectTargetWords(_ context.Context, _ uuid.UUID, selectedIDs []uuid.UUID, _ int) ([]TargetWordRecord, error) {
+	f.selectedIDs = selectedIDs
 	return f.targets, nil
 }
 
@@ -25,6 +31,10 @@ func (f *fakeArticleRepo) SaveGeneratedArticle(_ context.Context, draft ArticleD
 		ID:               uuid.New(),
 		UserID:           draft.UserID,
 		Title:            draft.Title,
+		Topic:            draft.Topic,
+		Difficulty:       draft.Difficulty,
+		ArticleLength:    draft.ArticleLength,
+		GenerationParams: draft.GenerationParams,
 		TargetWordCount:  draft.TargetWordCount,
 		CoveredWordCount: draft.CoveredWordCount,
 		GenerationStatus: draft.GenerationStatus,
@@ -37,11 +47,22 @@ func (f *fakeArticleRepo) ListArticles(context.Context, uuid.UUID, int, int) (Ar
 }
 
 func (f *fakeArticleRepo) GetArticle(context.Context, uuid.UUID, uuid.UUID) (ArticleDetail, error) {
-	return ArticleDetail{}, nil
+	return f.detail, nil
 }
 
 func (f *fakeArticleRepo) DeleteArticle(context.Context, uuid.UUID, uuid.UUID) error {
 	return nil
+}
+
+func (f *fakeArticleRepo) GetArticleProgress(context.Context, uuid.UUID, uuid.UUID) (UserArticleProgress, bool, error) {
+	return f.progress, f.hasProgress, nil
+}
+
+func (f *fakeArticleRepo) UpsertArticleProgress(_ context.Context, progress UserArticleProgress) (UserArticleProgress, error) {
+	f.progress = progress
+	f.hasProgress = true
+	f.progress.ID = uuid.New()
+	return f.progress, nil
 }
 
 type fakeAIClient struct {
@@ -90,6 +111,153 @@ func TestGenerateRetriesLowCoverageAndSavesAllTargetWords(t *testing.T) {
 	}
 	if len(repo.saved.Words) != 15 {
 		t.Fatalf("saved words = %d, want 15", len(repo.saved.Words))
+	}
+	if repo.saved.ArticleLength != "medium" {
+		t.Fatalf("saved article length = %q, want medium", repo.saved.ArticleLength)
+	}
+	params := decodeGenerationParams(t, repo.saved.GenerationParams)
+	if params.Topic != "campus life" || params.Difficulty != "B1-B2" || params.ArticleLength != "medium" {
+		t.Fatalf("generation params = %#v, want request fields persisted", params)
+	}
+	if params.TargetWordCount != 15 || len(params.TargetRecordIDs) != 15 || len(params.TargetWordIDs) != 15 {
+		t.Fatalf("generation params target snapshot = %#v, want 15 final targets", params)
+	}
+}
+
+func TestGeneratePersistsManualSelectionMode(t *testing.T) {
+	targets := makeTargets(15)
+	selectedID := targets[0].RecordID.String()
+	content := contentForTargets(targets)
+	repo := &fakeArticleRepo{targets: targets}
+	aiClient := &fakeAIClient{resps: []*ai.GenerateArticleResponse{
+		{Title: "Manual", ContentMarkdown: content, CoveredWords: claimsForTargets(targets, content), MissingWords: []string{}},
+	}}
+	svc := NewService(repo, aiClient)
+
+	_, err := svc.Generate(context.Background(), GenerateRequest{
+		Topic:           "campus life",
+		Difficulty:      "B1",
+		ArticleLength:   "short",
+		TargetWordCount: 15,
+		TargetWordIDs:   []string{selectedID},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	if len(repo.selectedIDs) != 1 || repo.selectedIDs[0] != targets[0].RecordID {
+		t.Fatalf("selected IDs = %#v, want first target record id", repo.selectedIDs)
+	}
+	params := decodeGenerationParams(t, repo.saved.GenerationParams)
+	if params.SelectionMode != "manual" {
+		t.Fatalf("selection mode = %q, want manual", params.SelectionMode)
+	}
+	if params.TargetRecordIDs[0] != targets[0].RecordID.String() {
+		t.Fatalf("first target record id = %q, want %s", params.TargetRecordIDs[0], targets[0].RecordID)
+	}
+}
+
+func TestRegenerateReusesStoredGenerationParams(t *testing.T) {
+	targets := makeTargets(15)
+	content := contentForTargets(targets)
+	sourceParams := buildGenerationParams(GenerateRequest{
+		Topic:           "campus life",
+		Difficulty:      "B1",
+		ArticleLength:   "short",
+		TargetWordCount: 15,
+	}, targets, true)
+	repo := &fakeArticleRepo{
+		targets: targets,
+		detail: ArticleDetail{Article: Article{
+			ID:               uuid.New(),
+			Topic:            "fallback topic",
+			Difficulty:       "B2",
+			ArticleLength:    "medium",
+			TargetWordCount:  15,
+			GenerationParams: sourceParams,
+		}},
+	}
+	aiClient := &fakeAIClient{resps: []*ai.GenerateArticleResponse{
+		{Title: "Regenerated", ContentMarkdown: content, CoveredWords: claimsForTargets(targets, content), MissingWords: []string{}},
+	}}
+	svc := NewService(repo, aiClient)
+
+	got, err := svc.Regenerate(context.Background(), uuid.NewString())
+	if err != nil {
+		t.Fatalf("Regenerate returned error: %v", err)
+	}
+	if got.Status != "succeeded" || got.CoveredWordCount != 15 {
+		t.Fatalf("result = %#v, want regenerated success", got)
+	}
+	if len(repo.selectedIDs) != len(targets) {
+		t.Fatalf("selected IDs = %d, want %d", len(repo.selectedIDs), len(targets))
+	}
+	for i, id := range repo.selectedIDs {
+		if id != targets[i].RecordID {
+			t.Fatalf("selected ID[%d] = %s, want %s", i, id, targets[i].RecordID)
+		}
+	}
+	if repo.saved.Topic != "campus life" || repo.saved.Difficulty != "B1" || repo.saved.ArticleLength != "short" {
+		t.Fatalf("saved request fields = topic %q difficulty %q length %q, want stored generation params", repo.saved.Topic, repo.saved.Difficulty, repo.saved.ArticleLength)
+	}
+}
+
+func TestRegenerateRequiresTargetSnapshot(t *testing.T) {
+	repo := &fakeArticleRepo{
+		detail: ArticleDetail{Article: Article{
+			ID:               uuid.New(),
+			Topic:            "campus life",
+			Difficulty:       "B1",
+			ArticleLength:    "medium",
+			TargetWordCount:  15,
+			GenerationParams: []byte(`{}`),
+		}},
+	}
+	svc := NewService(repo, &fakeAIClient{})
+
+	_, err := svc.Regenerate(context.Background(), uuid.NewString())
+	var apiErr APIError
+	if err == nil || !asAPIError(err, &apiErr) {
+		t.Fatalf("error = %v, want APIError", err)
+	}
+	if apiErr.Code != "ARTICLE_GENERATION_PARAMS_MISSING_TARGETS" {
+		t.Fatalf("code = %s, want ARTICLE_GENERATION_PARAMS_MISSING_TARGETS", apiErr.Code)
+	}
+}
+
+func TestGetProgressDefaultsToUnread(t *testing.T) {
+	articleID := uuid.New()
+	repo := &fakeArticleRepo{
+		detail: ArticleDetail{Article: Article{ID: articleID}},
+	}
+	svc := NewService(repo, &fakeAIClient{})
+
+	got, err := svc.GetProgress(context.Background(), articleID.String())
+	if err != nil {
+		t.Fatalf("GetProgress returned error: %v", err)
+	}
+	if got.ArticleID != articleID || got.Status != ArticleProgressUnread || got.ProgressPercent != 0 {
+		t.Fatalf("progress = %#v, want default unread for article", got)
+	}
+}
+
+func TestUpdateProgressMarksArticleRead(t *testing.T) {
+	articleID := uuid.New()
+	repo := &fakeArticleRepo{
+		detail: ArticleDetail{Article: Article{ID: articleID}},
+	}
+	svc := NewService(repo, &fakeAIClient{})
+
+	got, err := svc.UpdateProgress(context.Background(), articleID.String(), ArticleProgressRequest{
+		Status: ArticleProgressRead,
+	})
+	if err != nil {
+		t.Fatalf("UpdateProgress returned error: %v", err)
+	}
+	if got.Status != ArticleProgressRead || got.ProgressPercent != 100 {
+		t.Fatalf("progress = %#v, want read at 100%%", got)
+	}
+	if repo.progress.CompletedAt == nil {
+		t.Fatalf("completed_at = nil, want set")
 	}
 }
 
@@ -277,4 +445,13 @@ func asAPIError(err error, target *APIError) bool {
 		return true
 	}
 	return false
+}
+
+func decodeGenerationParams(t *testing.T, raw []byte) generationParams {
+	t.Helper()
+	var params generationParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		t.Fatalf("decode generation params: %v; raw=%s", err, string(raw))
+	}
+	return params
 }

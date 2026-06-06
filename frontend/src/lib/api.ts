@@ -18,9 +18,6 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ??
   "http://localhost:8080/api/v1"
 
-const hiddenWordIds = new Set<string>()
-const recognizedWordIds = new Set<string>()
-const readArticleIds = new Set<string>()
 const WEAK_POOL_MIN_WEAK_SCORE = 50
 const WEAK_POOL_MAX_MASTERY = 60
 
@@ -41,6 +38,10 @@ interface BackendVocabRecord {
   mastery_score: number
   weak_score: number
   next_study_date: string | null
+  ignored?: boolean
+  pinned?: boolean
+  recognized?: boolean
+  mastered?: boolean
   synced_at?: string | null
 }
 
@@ -59,6 +60,7 @@ interface BackendArticleListItem {
   title: string
   topic: string
   difficulty: string
+  article_length?: ArticleLength
   summary?: string
   target_word_count: number
   covered_word_count: number
@@ -81,6 +83,12 @@ interface BackendArticleDetail {
     char_length: number | null
     is_covered: boolean
   }>
+}
+
+interface BackendArticleProgress {
+  status: "unread" | "reading" | "read"
+  progress_percent: number
+  last_paragraph_index?: number | null
 }
 
 function inferArticleLength(targetWordCount: number): ArticleLength {
@@ -113,26 +121,28 @@ function mapWord(record: BackendVocabRecord): VocabWord {
     mastery_score: record.mastery_score,
     weak_score: record.weak_score,
     next_study_date: record.next_study_date,
-    recognized:
-      recognizedWordIds.has(record.id) || recognizedWordIds.has(record.word_id),
-    mastered: hiddenWordIds.has(record.id) || hiddenWordIds.has(record.word_id),
-    ignored: false,
-    recently_covered_count: 0,
+    recognized: record.recognized ?? false,
+    mastered: record.mastered ?? false,
+    ignored: record.ignored ?? false,
   }
 }
 
-function mapArticle(item: BackendArticleListItem): Article {
+function mapArticle(
+  item: BackendArticleListItem,
+  progress?: BackendArticleProgress | null
+): Article {
   return {
     id: item.id,
     title: item.title || "Untitled article",
     topic: item.topic,
     difficulty: item.difficulty as Article["difficulty"],
-    article_length: inferArticleLength(item.target_word_count),
+    article_length:
+      item.article_length ?? inferArticleLength(item.target_word_count),
     target_word_count: item.target_word_count,
     covered_word_count: item.covered_word_count,
     coverage_rate: item.coverage_rate,
     created_at: item.created_at ?? new Date(0).toISOString(),
-    read: readArticleIds.has(item.id),
+    read: progress?.status === "read",
   }
 }
 
@@ -175,6 +185,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Accept: "text/markdown, text/plain;q=0.9, */*;q=0.8",
+      ...init?.headers,
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`)
+  }
+  return res.text()
+}
+
 async function listWords(
   endpoint: "/vocab/records" | "/vocab/weak"
 ): Promise<VocabWord[]> {
@@ -192,9 +217,7 @@ async function listWords(
     pageNumber += 1
   } while (items.length < total)
 
-  return items.map(mapWord).filter((w) => {
-    return !hiddenWordIds.has(w.id) && !hiddenWordIds.has(w.word_id ?? "")
-  })
+  return items.map(mapWord)
 }
 
 export type VocabSort =
@@ -249,9 +272,7 @@ async function listWordsPage(
   )
   return {
     ...page,
-    items: page.items.map(mapWord).filter((w) => {
-      return !hiddenWordIds.has(w.id) && !hiddenWordIds.has(w.word_id ?? "")
-    }),
+    items: page.items.map(mapWord),
   }
 }
 
@@ -320,10 +341,6 @@ export const api = {
     }
   },
 
-  todayProgress(): TodayProgress {
-    return { practiced: 0, target: 30, streak_days: 0 }
-  },
-
   async listWords(): Promise<VocabWord[]> {
     return listWords("/vocab/records")
   },
@@ -358,7 +375,14 @@ export const api = {
     const page = await request<Page<BackendArticleListItem>>(
       "/articles?page_size=100"
     )
-    return page.items.map(mapArticle)
+    const progress = await Promise.all(
+      page.items.map((item) =>
+        request<BackendArticleProgress>(`/articles/${item.id}/progress`).catch(
+          () => null
+        )
+      )
+    )
+    return page.items.map((item, index) => mapArticle(item, progress[index]))
   },
 
   async firstUnreadArticle(): Promise<Article | null> {
@@ -367,11 +391,14 @@ export const api = {
   },
 
   async getArticle(id: string): Promise<ArticleDetail | null> {
-    const detail = await request<BackendArticleDetail>(`/articles/${id}`)
+    const [detail, progress] = await Promise.all([
+      request<BackendArticleDetail>(`/articles/${id}`),
+      request<BackendArticleProgress>(`/articles/${id}/progress`),
+    ])
     const createdAt =
       detail.article.created_at ?? (await articleCreatedAtFromList(id))
     return {
-      ...mapArticle({ ...detail.article, created_at: createdAt }),
+      ...mapArticle({ ...detail.article, created_at: createdAt }, progress),
       content_markdown: detail.article.content_markdown,
       article_words: detail.words.map(mapArticleWord),
     }
@@ -379,6 +406,10 @@ export const api = {
 
   async deleteArticle(id: string): Promise<void> {
     await request<void>(`/articles/${id}`, { method: "DELETE" })
+  },
+
+  async exportArticleMarkdown(id: string): Promise<string> {
+    return requestText(`/articles/${id}/export.md`)
   },
 
   async generateArticle(
@@ -402,20 +433,61 @@ export const api = {
     return buildGenerationPreview(selectedIds, targetCount, words)
   },
 
-  markArticleRead(id: string): boolean {
-    readArticleIds.add(id)
+  async markArticleRead(id: string): Promise<boolean> {
+    await request<BackendArticleProgress>(`/articles/${id}/progress`, {
+      method: "PUT",
+      body: JSON.stringify({ status: "read" }),
+    })
     return true
   },
 
-  markWordMastered(id: string, mastered: boolean): boolean {
-    if (mastered) hiddenWordIds.add(id)
-    else hiddenWordIds.delete(id)
+  async markWordMastered(
+    wordId: string,
+    mastered: boolean,
+    articleId?: string
+  ): Promise<boolean> {
+    if (!mastered) return true
+    await request("/word-events", {
+      method: "POST",
+      body: JSON.stringify({
+        word_id: wordId,
+        article_id: articleId,
+        event_type: "manually_mastered",
+        source: "manual",
+        metadata: {},
+      }),
+    })
     return true
   },
 
-  markWordRecognized(id: string, recognized: boolean): boolean {
-    if (recognized) recognizedWordIds.add(id)
-    else recognizedWordIds.delete(id)
+  async markWordRecognized(
+    wordId: string,
+    recognized: boolean,
+    articleId?: string
+  ): Promise<boolean> {
+    await request("/word-events", {
+      method: "POST",
+      body: JSON.stringify({
+        word_id: wordId,
+        article_id: articleId,
+        event_type: recognized ? "recognized_in_context" : "failed_in_context",
+        source: "reader",
+        metadata: {},
+      }),
+    })
+    return true
+  },
+
+  async markWordIgnored(recordId: string, ignored: boolean): Promise<boolean> {
+    await request(`/vocab/${recordId}/preferences`, {
+      method: "PUT",
+      body: JSON.stringify({
+        ignored,
+        ignored_reason: ignored ? "not_relevant" : null,
+        ignored_until: null,
+        pinned: false,
+      }),
+    })
     return true
   },
 }

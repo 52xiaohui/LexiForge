@@ -1,6 +1,6 @@
 // Package database wraps GORM connection setup, schema migration, and seed data.
 //
-// MVP keeps things simple: AutoMigrate creates the 5 tables on every boot,
+// MVP keeps things simple: AutoMigrate creates the application tables on every boot,
 // pgcrypto is enabled so `gen_random_uuid()` works, and a single local-user
 // row is seeded so all FKs have a target. v0.5 will swap AutoMigrate for a
 // proper migration tool (goose / golang-migrate).

@@ -165,9 +165,7 @@ export function Articles() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>删除这篇文章？</AlertDialogTitle>
                   <AlertDialogDescription>
-                    《{article.title}》将从历史中移除，操作不可撤销。 （MVP
-                    阶段删除是前端原型，真实 API 接入后会调用 DELETE
-                    /articles/:id。）
+                    《{article.title}》将从历史中移除，操作不可撤销。
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

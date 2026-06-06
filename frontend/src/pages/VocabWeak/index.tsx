@@ -64,7 +64,7 @@ import { useMediaQuery } from "@/hooks/use-media-query"
 import type { LastResponse, VocabWord } from "@/types/api"
 
 type ResponseFilter = "ALL" | LastResponse
-type SortBy = "weak_score" | "study_count" | "recently_covered_count"
+type SortBy = "weak_score" | "study_count"
 type SortDir = "asc" | "desc"
 
 const MAX_SELECTION = 80
@@ -85,7 +85,6 @@ export function VocabWeak() {
   const queryClient = useQueryClient()
   const [responseFilter, setResponseFilter] = useState<ResponseFilter>("ALL")
   const [stickingOnly, setStickingOnly] = useState(false)
-  const [hideRecentlyCovered, setHideRecentlyCovered] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>("weak_score")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -156,7 +155,9 @@ export function VocabWeak() {
 
   const markMastered = useMutation({
     mutationFn: async (word: VocabWord) => {
-      api.markWordMastered(word.id, true)
+      const wordId = word.word_id
+      if (!wordId) throw new Error("缺少单词 ID，无法标记掌握")
+      await api.markWordMastered(wordId, true)
       return word
     },
     meta: { silent: true },
@@ -167,20 +168,18 @@ export function VocabWeak() {
       toast("已标记为掌握", {
         description: `「${word.spelling}」从薄弱词中移除`,
         duration: 6000,
-        action: {
-          label: "撤销",
-          onClick: () => {
-            api.markWordMastered(word.id, false)
-            queryClient.invalidateQueries({ queryKey: ["vocab"] })
-          },
-        },
+      })
+    },
+    onError: (error) => {
+      toast.error("标记掌握失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
       })
     },
   })
 
   const ignoreWord = useMutation({
     mutationFn: async (word: VocabWord) => {
-      api.markWordMastered(word.id, true)
+      await api.markWordIgnored(word.id, true)
       return word
     },
     meta: { silent: true },
@@ -194,29 +193,24 @@ export function VocabWeak() {
         action: {
           label: "撤销",
           onClick: () => {
-            api.markWordMastered(word.id, false)
-            queryClient.invalidateQueries({ queryKey: ["vocab"] })
+            void api.markWordIgnored(word.id, false).then(() => {
+              queryClient.invalidateQueries({ queryKey: ["vocab"] })
+            })
           },
         },
+      })
+    },
+    onError: (error) => {
+      toast.error("忽略失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
       })
     },
   })
 
   const visible = useMemo(() => {
     let rows = loadedWords.slice()
-    if (hideRecentlyCovered) {
-      rows = rows.filter((w) => (w.recently_covered_count ?? 0) === 0)
-    }
-    if (sortBy === "recently_covered_count") {
-      rows.sort((a, b) => {
-        const av = a.recently_covered_count ?? 0
-        const bv = b.recently_covered_count ?? 0
-        const diff = av - bv
-        return sortDir === "desc" ? -diff : diff
-      })
-    }
     return rows
-  }, [loadedWords, hideRecentlyCovered, sortBy, sortDir])
+  }, [loadedWords])
 
   const selectedCount = selected.size
   const overLimit = selectedCount > MAX_SELECTION
@@ -340,14 +334,6 @@ export function VocabWeak() {
           只看反复忘
         </Label>
 
-        <Label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Checkbox
-            checked={hideRecentlyCovered}
-            onCheckedChange={(v) => setHideRecentlyCovered(v === true)}
-          />
-          隐藏最近已覆盖
-        </Label>
-
         <div className="ms-auto flex items-center gap-1 text-xs text-muted-foreground">
           <span>
             显示已加载 {visible.length} · 已选 {selectedCount}
@@ -397,14 +383,6 @@ export function VocabWeak() {
                     onClick={() => toggleSort("study_count")}
                   />
                 </TableHead>
-                <TableHead>
-                  <SortButton
-                    label="近期覆盖"
-                    active={sortBy === "recently_covered_count"}
-                    dir={sortDir}
-                    onClick={() => toggleSort("recently_covered_count")}
-                  />
-                </TableHead>
                 <TableHead>标签</TableHead>
                 <TableHead className="text-right">下次复习</TableHead>
                 <TableHead className="w-10 pr-4" />
@@ -414,7 +392,7 @@ export function VocabWeak() {
               {visible.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={9}
                     className="py-16 text-center text-sm text-muted-foreground"
                   >
                     没有匹配当前筛选的薄弱词。
@@ -587,7 +565,6 @@ const WordTableRow = memo(function WordTableRow({
   onMaster,
   onIgnore,
 }: WordRowProps) {
-  const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
@@ -617,18 +594,6 @@ const WordTableRow = memo(function WordTableRow({
       </TableCell>
       <TableCell className="text-sm text-muted-foreground tabular-nums">
         {word.study_count}
-      </TableCell>
-      <TableCell className="text-sm tabular-nums">
-        {recentlyCovered > 0 ? (
-          <Badge
-            variant="outline"
-            className="h-5 px-1.5 text-[10px] text-muted-foreground"
-          >
-            近 {recentlyCovered} 篇
-          </Badge>
-        ) : (
-          <span className="text-[11px] text-muted-foreground/60">—</span>
-        )}
       </TableCell>
       <TableCell>
         {word.tags.includes("STICKING") && (
@@ -668,7 +633,6 @@ const WordCardRow = memo(function WordCardRow({
   onMaster,
   onIgnore,
 }: WordRowProps) {
-  const recentlyCovered = word.recently_covered_count ?? 0
   return (
     <div
       role="button"
@@ -712,14 +676,6 @@ const WordCardRow = memo(function WordCardRow({
           {word.tags.includes("STICKING") && (
             <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
               反复忘
-            </Badge>
-          )}
-          {recentlyCovered > 0 && (
-            <Badge
-              variant="outline"
-              className="h-5 px-1.5 text-[10px] text-muted-foreground"
-            >
-              近 {recentlyCovered} 篇
             </Badge>
           )}
           <span className="text-muted-foreground">

@@ -105,7 +105,7 @@ export function ArticleDetail() {
 
   const markMastered = useMutation({
     mutationFn: async (word: { id: string; spelling: string }) => {
-      api.markWordMastered(word.id, true)
+      await api.markWordMastered(word.id, true, article?.id)
       return word
     },
     meta: { silent: true },
@@ -116,13 +116,11 @@ export function ArticleDetail() {
           ? `「${word.spelling}」从薄弱词移除`
           : undefined,
         duration: 6000,
-        action: {
-          label: "撤销",
-          onClick: () => {
-            api.markWordMastered(word.id, false)
-            queryClient.invalidateQueries({ queryKey: ["vocab"] })
-          },
-        },
+      })
+    },
+    onError: (error) => {
+      toast.error("标记掌握失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
       })
     },
   })
@@ -135,12 +133,17 @@ export function ArticleDetail() {
       id: string
       recognized: boolean
     }) => {
-      api.markWordRecognized(id, recognized)
+      await api.markWordRecognized(id, recognized, article?.id)
       return { id, recognized }
     },
     meta: { silent: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vocab"] })
+    },
+    onError: (error) => {
+      toast.error("记录失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
+      })
     },
   })
 
@@ -366,7 +369,7 @@ export function ArticleDetail() {
 
   const covered = article.article_words.filter((w) => w.is_covered)
 
-  const masterAll = () => {
+  const masterAll = async () => {
     const toMaster = covered.filter((w) => !wordIndex.get(w.word_id)?.mastered)
     if (toMaster.length === 0) {
       toast("这些词都已经掌握了", {
@@ -374,37 +377,41 @@ export function ArticleDetail() {
       })
       return
     }
-    for (const w of toMaster) {
-      api.markWordMastered(w.word_id, true)
+    try {
+      await Promise.all(
+        toMaster.map((w) => api.markWordMastered(w.word_id, true, article.id))
+      )
+    } catch (error) {
+      toast.error("批量标记失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
+      })
+      return
     }
     queryClient.invalidateQueries({ queryKey: ["vocab"] })
     toast("已批量标记已掌握", {
       description: `共 ${toMaster.length} 个词从薄弱词中移除`,
       duration: 8000,
-      action: {
-        label: "撤销",
-        onClick: () => {
-          for (const w of toMaster) {
-            api.markWordMastered(w.word_id, false)
-          }
-          queryClient.invalidateQueries({ queryKey: ["vocab"] })
-        },
-      },
     })
   }
 
-  const handleExport = () => {
-    const md = buildMarkdown(article)
-    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${article.title.replace(/[\\/:*?"<>|]+/g, "_")}.md`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    toast.success("导出成功", { description: `${a.download}` })
+  const handleExport = async () => {
+    try {
+      const md = await api.exportArticleMarkdown(article.id)
+      const blob = new Blob([md], { type: "text/markdown;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${article.title.replace(/[\\/:*?"<>|]+/g, "_")}.md`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success("导出成功", { description: `${a.download}` })
+    } catch (error) {
+      toast.error("导出失败", {
+        description: error instanceof Error ? error.message : "请稍后再试。",
+      })
+    }
   }
 
   // ---------- toolbar handlers ----------
@@ -474,7 +481,7 @@ export function ArticleDetail() {
           data-slot="article-hero"
           className="mx-auto max-w-[68ch] space-y-4 py-6 text-center sm:py-8"
         >
-          <h1 className="text-4xl leading-[1.08] font-medium tracking-normal text-balance sm:text-5xl sm:leading-[1.03] [font-family:var(--font-reading-serif)]">
+          <h1 className="[font-family:var(--font-reading-serif)] text-4xl leading-[1.08] font-medium tracking-normal text-balance sm:text-5xl sm:leading-[1.03]">
             {article.title}
           </h1>
           <div className="mx-auto flex max-w-[64ch] flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
@@ -605,29 +612,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(
     target.closest("input, textarea, select, [contenteditable='true']")
   )
-}
-
-function buildMarkdown(article: ArticleDetailType): string {
-  const targets = article.article_words
-    .map((w) => {
-      const state = w.is_covered ? "✓" : "✗"
-      const translation = w.translation ? ` — ${w.translation}` : ""
-      return `- ${state} **${w.spelling}**${translation}`
-    })
-    .join("\n")
-
-  return `# ${article.title}
-
-> ${article.topic} · ${article.difficulty} · ${formatArticleLength(article.article_length)} · 覆盖 ${formatCoverage(article.coverage_rate)} (${article.covered_word_count}/${article.target_word_count})
-
-${article.content_markdown}
-
----
-
-## 目标词
-
-${targets}
-`
 }
 
 function ReadingSkeleton() {

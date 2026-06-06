@@ -25,6 +25,7 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.GET("/records", h.ListRecords)
 	g.GET("/weak", h.ListWeak)
 	g.GET("/summary", h.Summary)
+	g.PUT("/:id/preferences", h.UpdatePreference)
 	g.GET("/:id", h.GetByID)
 }
 
@@ -57,6 +58,17 @@ func (h *Handler) Summary(c *gin.Context) {
 // GetByID handles `GET /api/v1/vocab/:id`.
 func (h *Handler) GetByID(c *gin.Context) {
 	result, err := h.svc.GetByID(c.Param("id"))
+	respond(c, result, err)
+}
+
+// UpdatePreference handles `PUT /api/v1/vocab/:id/preferences`.
+func (h *Handler) UpdatePreference(c *gin.Context) {
+	var req PreferenceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Respond(c, http.StatusBadRequest, "INVALID_PREFERENCE_BODY", "preference request body is invalid", nil)
+		return
+	}
+	result, err := h.svc.UpdatePreference(c.Param("id"), req)
 	respond(c, result, err)
 }
 

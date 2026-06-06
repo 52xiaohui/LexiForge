@@ -2,17 +2,20 @@ package article
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
+	"gorm.io/datatypes"
 
 	"lexiforge/backend/internal/ai"
 	"lexiforge/backend/internal/user"
@@ -39,6 +42,8 @@ type repository interface {
 	ListArticles(ctx context.Context, userID uuid.UUID, page, pageSize int) (ArticleListResult, error)
 	GetArticle(ctx context.Context, userID, articleID uuid.UUID) (ArticleDetail, error)
 	DeleteArticle(ctx context.Context, userID, articleID uuid.UUID) error
+	GetArticleProgress(ctx context.Context, userID, articleID uuid.UUID) (UserArticleProgress, bool, error)
+	UpsertArticleProgress(ctx context.Context, progress UserArticleProgress) (UserArticleProgress, error)
 }
 
 type GenerateRequest struct {
@@ -65,24 +70,44 @@ type PagedArticles struct {
 }
 
 type ArticleResponse struct {
-	ID               uuid.UUID `json:"id"`
-	Title            string    `json:"title"`
-	Topic            string    `json:"topic"`
-	Difficulty       string    `json:"difficulty"`
-	ContentMarkdown  string    `json:"content_markdown"`
-	Summary          string    `json:"summary"`
-	TargetWordCount  int       `json:"target_word_count"`
-	CoveredWordCount int       `json:"covered_word_count"`
-	CoverageRate     float64   `json:"coverage_rate"`
-	GenerationStatus string    `json:"generation_status"`
-	ModelName        string    `json:"model_name"`
-	PromptVersion    string    `json:"prompt_version"`
-	CreatedAt        string    `json:"created_at"`
+	ID               uuid.UUID       `json:"id"`
+	Title            string          `json:"title"`
+	Topic            string          `json:"topic"`
+	Difficulty       string          `json:"difficulty"`
+	ArticleLength    string          `json:"article_length"`
+	ContentMarkdown  string          `json:"content_markdown"`
+	Summary          string          `json:"summary"`
+	GenerationParams json.RawMessage `json:"generation_params"`
+	TargetWordCount  int             `json:"target_word_count"`
+	CoveredWordCount int             `json:"covered_word_count"`
+	CoverageRate     float64         `json:"coverage_rate"`
+	GenerationStatus string          `json:"generation_status"`
+	ModelName        string          `json:"model_name"`
+	PromptVersion    string          `json:"prompt_version"`
+	CreatedAt        string          `json:"created_at"`
 }
 
 type ArticleDetailResponse struct {
 	Article ArticleResponse `json:"article"`
 	Words   []ArticleWord   `json:"words"`
+}
+
+type ArticleProgressRequest struct {
+	Status             string `json:"status"`
+	ProgressPercent    *int   `json:"progress_percent"`
+	LastParagraphIndex *int   `json:"last_paragraph_index"`
+}
+
+type ArticleProgressResponse struct {
+	ID                 uuid.UUID  `json:"id,omitempty"`
+	UserID             uuid.UUID  `json:"user_id"`
+	ArticleID          uuid.UUID  `json:"article_id"`
+	Status             string     `json:"status"`
+	ProgressPercent    int        `json:"progress_percent"`
+	LastParagraphIndex *int       `json:"last_paragraph_index,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	UpdatedAt          *time.Time `json:"updated_at,omitempty"`
 }
 
 type APIError struct {
@@ -153,8 +178,10 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateRe
 		Title:            strings.TrimSpace(aiResp.Title),
 		Topic:            normalized.Topic,
 		Difficulty:       normalized.Difficulty,
+		ArticleLength:    normalized.ArticleLength,
 		ContentMarkdown:  aiResp.ContentMarkdown,
 		Summary:          aiResp.Summary,
+		GenerationParams: buildGenerationParams(normalized, targets, len(selectedIDs) > 0),
 		TargetWordCount:  len(targets),
 		CoveredWordCount: covered,
 		CoverageRate:     decimal.NewFromFloat(rate).Round(4),
@@ -223,6 +250,62 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.repo.DeleteArticle(ctx, userID, articleID)
 }
 
+func (s *Service) GetProgress(ctx context.Context, id string) (ArticleProgressResponse, error) {
+	detail, err := s.getDetail(ctx, id)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	userID, err := localUserID()
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	progress, ok, err := s.repo.GetArticleProgress(ctx, userID, detail.Article.ID)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	if !ok {
+		return ArticleProgressResponse{
+			UserID:          userID,
+			ArticleID:       detail.Article.ID,
+			Status:          ArticleProgressUnread,
+			ProgressPercent: 0,
+		}, nil
+	}
+	return mapArticleProgress(progress), nil
+}
+
+func (s *Service) UpdateProgress(ctx context.Context, id string, req ArticleProgressRequest) (ArticleProgressResponse, error) {
+	detail, err := s.getDetail(ctx, id)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	userID, err := localUserID()
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	progress, err := normalizeProgressRequest(userID, detail.Article.ID, req)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	progress, err = s.repo.UpsertArticleProgress(ctx, progress)
+	if err != nil {
+		return ArticleProgressResponse{}, err
+	}
+	return mapArticleProgress(progress), nil
+}
+
+func (s *Service) Regenerate(ctx context.Context, id string) (GenerateResult, error) {
+	detail, err := s.getDetail(ctx, id)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	req, err := generateRequestFromParams(detail.Article)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	return s.Generate(ctx, req)
+}
+
 func (s *Service) ExportMarkdown(ctx context.Context, id string) (string, error) {
 	detail, err := s.getDetail(ctx, id)
 	if err != nil {
@@ -260,8 +343,10 @@ func mapArticleDetail(detail ArticleDetail) ArticleDetailResponse {
 			Title:            detail.Article.Title,
 			Topic:            detail.Article.Topic,
 			Difficulty:       detail.Article.Difficulty,
+			ArticleLength:    detail.Article.ArticleLength,
 			ContentMarkdown:  detail.Article.ContentMarkdown,
 			Summary:          detail.Article.Summary,
+			GenerationParams: json.RawMessage(detail.Article.GenerationParams),
 			TargetWordCount:  detail.Article.TargetWordCount,
 			CoveredWordCount: detail.Article.CoveredWordCount,
 			CoverageRate:     coverage,
@@ -319,6 +404,136 @@ func parseUUIDs(ids []string) ([]uuid.UUID, error) {
 		out = append(out, parsed)
 	}
 	return out, nil
+}
+
+type generationParams struct {
+	Topic           string   `json:"topic"`
+	Difficulty      string   `json:"difficulty"`
+	ArticleLength   string   `json:"article_length"`
+	TargetWordCount int      `json:"target_word_count"`
+	TargetRecordIDs []string `json:"target_record_ids"`
+	TargetWordIDs   []string `json:"target_word_ids"`
+	SelectionMode   string   `json:"selection_mode"`
+}
+
+func buildGenerationParams(req GenerateRequest, targets []TargetWordRecord, manual bool) datatypes.JSON {
+	params := generationParams{
+		Topic:           req.Topic,
+		Difficulty:      req.Difficulty,
+		ArticleLength:   req.ArticleLength,
+		TargetWordCount: len(targets),
+		TargetRecordIDs: make([]string, 0, len(targets)),
+		TargetWordIDs:   make([]string, 0, len(targets)),
+		SelectionMode:   "auto",
+	}
+	if manual {
+		params.SelectionMode = "manual"
+	}
+	for _, target := range targets {
+		params.TargetRecordIDs = append(params.TargetRecordIDs, target.RecordID.String())
+		params.TargetWordIDs = append(params.TargetWordIDs, target.WordID.String())
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return datatypes.JSON([]byte(`{}`))
+	}
+	return datatypes.JSON(raw)
+}
+
+func generateRequestFromParams(article Article) (GenerateRequest, error) {
+	var params generationParams
+	if len(article.GenerationParams) > 0 {
+		if err := json.Unmarshal(article.GenerationParams, &params); err != nil {
+			return GenerateRequest{}, APIError{Status: 422, Code: "ARTICLE_GENERATION_PARAMS_INVALID", Message: "article generation parameters are invalid"}
+		}
+	}
+	if params.Topic == "" {
+		params.Topic = article.Topic
+	}
+	if params.Difficulty == "" {
+		params.Difficulty = article.Difficulty
+	}
+	if params.ArticleLength == "" {
+		params.ArticleLength = article.ArticleLength
+	}
+	if params.TargetWordCount == 0 {
+		params.TargetWordCount = article.TargetWordCount
+	}
+	if len(params.TargetRecordIDs) == 0 {
+		return GenerateRequest{}, APIError{Status: 422, Code: "ARTICLE_GENERATION_PARAMS_MISSING_TARGETS", Message: "article does not have a target word snapshot for regeneration"}
+	}
+	return GenerateRequest{
+		Topic:           params.Topic,
+		Difficulty:      params.Difficulty,
+		ArticleLength:   params.ArticleLength,
+		TargetWordCount: params.TargetWordCount,
+		TargetWordIDs:   params.TargetRecordIDs,
+	}, nil
+}
+
+func normalizeProgressRequest(userID, articleID uuid.UUID, req ArticleProgressRequest) (UserArticleProgress, error) {
+	status := strings.TrimSpace(req.Status)
+	progress := 0
+	if req.ProgressPercent != nil {
+		progress = *req.ProgressPercent
+	}
+	if status == "" {
+		switch {
+		case progress >= 100:
+			status = ArticleProgressRead
+		case progress > 0:
+			status = ArticleProgressReading
+		default:
+			status = ArticleProgressUnread
+		}
+	}
+	if status != ArticleProgressUnread && status != ArticleProgressReading && status != ArticleProgressRead {
+		return UserArticleProgress{}, APIError{Status: 400, Code: "INVALID_ARTICLE_PROGRESS", Message: "status must be unread, reading, or read"}
+	}
+	if progress < 0 || progress > 100 {
+		return UserArticleProgress{}, APIError{Status: 400, Code: "INVALID_ARTICLE_PROGRESS", Message: "progress_percent must be between 0 and 100"}
+	}
+	if req.LastParagraphIndex != nil && *req.LastParagraphIndex < 0 {
+		return UserArticleProgress{}, APIError{Status: 400, Code: "INVALID_ARTICLE_PROGRESS", Message: "last_paragraph_index must be >= 0"}
+	}
+	now := time.Now()
+	row := UserArticleProgress{
+		UserID:             userID,
+		ArticleID:          articleID,
+		Status:             status,
+		ProgressPercent:    progress,
+		LastParagraphIndex: req.LastParagraphIndex,
+	}
+	switch status {
+	case ArticleProgressUnread:
+		row.ProgressPercent = 0
+		row.LastParagraphIndex = nil
+	case ArticleProgressReading:
+		if row.ProgressPercent == 0 {
+			row.ProgressPercent = 1
+		}
+		row.StartedAt = &now
+	case ArticleProgressRead:
+		row.ProgressPercent = 100
+		row.StartedAt = &now
+		row.CompletedAt = &now
+	}
+	return row, nil
+}
+
+func mapArticleProgress(row UserArticleProgress) ArticleProgressResponse {
+	updatedAt := row.UpdatedAt
+	return ArticleProgressResponse{
+		ID:                 row.ID,
+		UserID:             row.UserID,
+		ArticleID:          row.ArticleID,
+		Status:             row.Status,
+		ProgressPercent:    row.ProgressPercent,
+		LastParagraphIndex: row.LastParagraphIndex,
+		StartedAt:          row.StartedAt,
+		CompletedAt:        row.CompletedAt,
+		UpdatedAt:          &updatedAt,
+	}
 }
 
 func buildAIRequest(req GenerateRequest, targets []TargetWordRecord, missing []string) ai.GenerateArticleRequest {

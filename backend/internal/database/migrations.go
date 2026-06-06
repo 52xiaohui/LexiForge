@@ -11,11 +11,12 @@ import (
 
 	"lexiforge/backend/internal/article"
 	"lexiforge/backend/internal/dictionary"
+	"lexiforge/backend/internal/learning"
 	"lexiforge/backend/internal/user"
 	"lexiforge/backend/internal/vocabulary"
 )
 
-// RunMigrations enables pgcrypto, applies AutoMigrate for the MVP 5 tables,
+// RunMigrations enables pgcrypto, applies AutoMigrate for the MVP tables,
 // and seeds the fixed local-user row.
 //
 // Idempotent: rerunning it is a no-op once the schema and seed exist. Tests
@@ -29,9 +30,12 @@ func RunMigrations(db *gorm.DB) error {
 		&user.User{},
 		&vocabulary.VocabWord{},
 		&vocabulary.StudyRecord{},
+		&vocabulary.UserWordPreference{},
 		&dictionary.Entry{},
 		&article.Article{},
 		&article.ArticleWord{},
+		&article.UserArticleProgress{},
+		&learning.WordLearningEvent{},
 	); err != nil {
 		return fmt.Errorf("auto migrate: %w", err)
 	}
@@ -41,7 +45,9 @@ func RunMigrations(db *gorm.DB) error {
 	}
 
 	slog.Info("migrations applied", "tables", []string{
-		"users", "vocab_words", "study_records", "dictionary_entries", "articles", "article_words",
+		"users", "vocab_words", "study_records", "user_word_preferences",
+		"dictionary_entries", "articles", "article_words", "user_article_progress",
+		"word_learning_events",
 	})
 	return nil
 }
@@ -60,6 +66,7 @@ func seedLocalUser(db *gorm.DB) error {
 		Email:        "local@localhost",
 		DisplayName:  "Local User",
 		PasswordHash: "",
+		LearningMode: user.LearningModeExternalAssist,
 	}
 	res := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row)
 	if res.Error != nil && !errors.Is(res.Error, gorm.ErrDuplicatedKey) {
