@@ -26,7 +26,6 @@ coverage.out
 # Env files -------------------------------------------------------------------
 *.env
 .env.*
-!.env
 !*.env.example
 !.env.example
 
