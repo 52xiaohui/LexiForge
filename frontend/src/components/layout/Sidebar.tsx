@@ -8,7 +8,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
 import { Fragment } from "react"
-import { Link, NavLink } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -22,7 +22,22 @@ interface NavItem {
   to: string
   label: string
   icon: IconSvgElement
+  /**
+   * When true, the item is only active on an exact path match. Defaults to a
+   * prefix match so a section item stays highlighted on nested routes.
+   */
   end?: boolean
+  /**
+   * Escape hatch for sections whose nested routes cannot be expressed by a
+   * simple prefix rule.
+   */
+  match?: (pathname: string) => boolean
+}
+
+function isItemActive(item: NavItem, pathname: string): boolean {
+  if (item.match) return item.match(pathname)
+  if (item.end) return pathname === item.to
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
 }
 
 interface NavGroup {
@@ -33,7 +48,9 @@ interface NavGroup {
 const navGroups: NavGroup[] = [
   {
     label: "总览",
-    items: [{ to: "/dashboard", label: "Dashboard", icon: DashboardCircleIcon }],
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: DashboardCircleIcon },
+    ],
   },
   {
     label: "单词",
@@ -45,7 +62,14 @@ const navGroups: NavGroup[] = [
   {
     label: "文章",
     items: [
-      { to: "/articles", label: "文章历史", icon: Notebook02Icon, end: true },
+      {
+        to: "/articles",
+        label: "文章历史",
+        icon: Notebook02Icon,
+        match: (p) =>
+          p === "/articles" ||
+          (p.startsWith("/articles/") && p !== "/articles/new"),
+      },
       { to: "/articles/new", label: "生成文章", icon: SparklesIcon },
     ],
   },
@@ -76,8 +100,8 @@ export function Sidebar({
   return (
     <div
       className={cn(
-        "flex h-full flex-col py-5 transition-[padding] duration-200",
-        isCollapsed ? "px-2" : "px-4",
+        "flex h-full flex-col py-5 transition-[padding] duration-200 motion-reduce:transition-none",
+        isCollapsed ? "px-2" : "px-4"
       )}
     >
       {/* Brand row — clickable home + collapse toggle pinned at the same
@@ -93,54 +117,60 @@ export function Sidebar({
         onCollapsedChange={onCollapsedChange}
       />
 
-      <nav className="mt-6 flex-1">
-        {navGroups.map((group, gi) => (
-          <Fragment key={group.label}>
-            {/* Collapsed mode loses the group label, so we draw a thin rule
+      <nav aria-label="主导航" className="mt-6 flex-1">
+        {navGroups.map((group, gi) => {
+          const groupLabelId = `nav-group-${gi}`
+          return (
+            <Fragment key={group.label}>
+              {/* Collapsed mode loses the group label, so we draw a thin rule
                 between groups to preserve the rhythmic separation the label
                 used to provide. */}
-            {isCollapsed && gi > 0 && (
-              <div
-                aria-hidden
-                className="mx-auto my-3 h-px w-6 bg-border/60"
-              />
-            )}
-            <div className={cn(!isCollapsed && gi > 0 && "mt-6")}>
-              <div
-                className={cn(
-                  "mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase transition-opacity",
-                  // Fade rather than unmount so the label appears smoothly
-                  // when the rail expands.
-                  isCollapsed
-                    ? "pointer-events-none h-0 opacity-0 mb-0"
-                    : "opacity-100",
-                )}
-              >
-                {group.label}
+              {isCollapsed && gi > 0 && (
+                <div
+                  aria-hidden
+                  className="mx-auto my-3 h-px w-6 bg-border/60"
+                />
+              )}
+              <div className={cn(!isCollapsed && gi > 0 && "mt-6")}>
+                <div
+                  id={groupLabelId}
+                  className={cn(
+                    "mb-2 px-2 text-[10px] font-medium tracking-[0.18em] text-muted-foreground uppercase transition-opacity motion-reduce:transition-none",
+                    // Fade rather than unmount so the label appears smoothly
+                    // when the rail expands. Kept in the DOM while collapsed so
+                    // it can still label the group for assistive tech.
+                    isCollapsed
+                      ? "pointer-events-none mb-0 h-0 opacity-0"
+                      : "opacity-100"
+                  )}
+                >
+                  {group.label}
+                </div>
+                <ul
+                  aria-labelledby={groupLabelId}
+                  className={cn(
+                    "space-y-0.5",
+                    isCollapsed && "flex flex-col items-center"
+                  )}
+                >
+                  {group.items.map((item) => (
+                    <li key={item.to} className={cn(isCollapsed && "w-full")}>
+                      <NavItemLink item={item} collapsed={isCollapsed} />
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul
-                className={cn(
-                  "space-y-0.5",
-                  isCollapsed && "flex flex-col items-center",
-                )}
-              >
-                {group.items.map((item) => (
-                  <li key={item.to} className={cn(isCollapsed && "w-full")}>
-                    <NavItemLink item={item} collapsed={isCollapsed} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </Fragment>
-        ))}
+            </Fragment>
+          )
+        })}
       </nav>
 
       {/* Footer — always shows the version pill. The collapse control used to
           live here; it now lives next to the brand for shorter mouse travel. */}
       <div
         className={cn(
-          "mt-6 transition-opacity",
-          isCollapsed && "opacity-0",
+          "mt-6 transition-opacity motion-reduce:transition-none",
+          isCollapsed && "opacity-0"
         )}
       >
         <div className="px-2 text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
@@ -170,7 +200,7 @@ function BrandRow({
         "flex transition-[gap,padding] duration-200",
         isCollapsed
           ? "flex-col items-center gap-2"
-          : cn("items-center gap-2.5 px-2", drawerVariant && "pr-10"),
+          : cn("items-center gap-2.5 px-2", drawerVariant && "pr-10")
       )}
     >
       <Link
@@ -184,7 +214,7 @@ function BrandRow({
             "min-w-0 leading-tight transition-[opacity,max-width] duration-200",
             isCollapsed
               ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
-              : "max-w-[140px] opacity-100",
+              : "max-w-[140px] opacity-100"
           )}
         >
           <span className="block truncate font-heading text-base font-medium tracking-tight">
@@ -213,7 +243,7 @@ function BrandRow({
                 strokeWidth={1.8}
                 className={cn(
                   "transition-transform",
-                  isCollapsed && "rotate-180",
+                  isCollapsed && "rotate-180"
                 )}
               />
             </Button>
@@ -234,43 +264,37 @@ interface NavItemLinkProps {
 }
 
 function NavItemLink({ item, collapsed }: NavItemLinkProps) {
+  const { pathname } = useLocation()
+  const isActive = isItemActive(item, pathname)
   const link = (
-    <NavLink
+    <Link
       to={item.to}
-      end={item.end}
+      aria-current={isActive ? "page" : undefined}
       aria-label={collapsed ? item.label : undefined}
-      className={({ isActive }) =>
-        cn(
-          // Keep the rail item shape stable across modes so the active
-          // marker pulses but the link box doesn't reflow on toggle.
-          "relative flex items-center rounded-xl text-sm transition-colors",
-          collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
-          // Active state differs by mode:
-          // - expanded: full-fill pill (legacy, high contrast)
-          // - collapsed: subtle bg + a 2px left-edge accent. Avoids
-          //   making the entire 64px rail go black on every page change.
-          isActive
-            ? collapsed
-              ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-primary"
-              : "bg-primary text-primary-foreground"
-            : "text-foreground/70 hover:bg-muted hover:text-foreground",
-        )
-      }
+      className={cn(
+        // Keep the rail item shape stable across modes so the active marker
+        // changes without resizing the link box.
+        "relative flex items-center rounded-xl text-sm transition-colors motion-reduce:transition-none",
+        collapsed ? "justify-center p-2.5" : "gap-3 px-3 py-2",
+        isActive
+          ? "bg-muted text-foreground before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r before:bg-primary"
+          : "text-foreground/70 hover:bg-muted hover:text-foreground"
+      )}
     >
       <HugeiconsIcon icon={item.icon} size={16} strokeWidth={1.8} />
       {/* Fade label rather than remove it from the DOM, so layout doesn't
           flicker mid-transition. The width handle keeps the rail tight. */}
       <span
         className={cn(
-          "min-w-0 truncate transition-[opacity,max-width] duration-200",
+          "min-w-0 truncate transition-[opacity,max-width] duration-200 motion-reduce:transition-none",
           collapsed
             ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
-            : "max-w-[160px] opacity-100",
+            : "max-w-[160px] opacity-100"
         )}
       >
         {item.label}
       </span>
-    </NavLink>
+    </Link>
   )
   if (!collapsed) return link
   return (
@@ -293,7 +317,7 @@ function LexiForgeMark() {
       className="grid size-9 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground"
     >
       <span
-        className="font-heading text-[14px] font-semibold leading-none tracking-tight"
+        className="font-heading text-[14px] leading-none font-semibold tracking-tight"
         style={{ fontFeatureSettings: '"ss01" on' }}
       >
         Lx
