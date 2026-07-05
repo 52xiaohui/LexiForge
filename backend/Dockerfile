@@ -10,18 +10,22 @@ WORKDIR /src
 # Cache module downloads — go.mod / go.sum invalidate this layer only when
 # dependencies actually change.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
-RUN go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ENV CGO_ENABLED=0
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
-FROM alpine:3.19 AS runner
+FROM alpine:3.24 AS runner
 RUN apk add --no-cache ca-certificates tzdata && \
     addgroup -S app && adduser -S app -G app
 WORKDIR /app
-COPY --from=builder /out/server /app/server
+COPY --from=builder --chown=app:app /out/server /app/server
 USER app
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]
