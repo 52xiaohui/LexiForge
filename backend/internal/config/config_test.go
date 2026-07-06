@@ -16,6 +16,7 @@ MAIMEMO_TOKEN=maimemo-token
 OPENAI_API_KEY=openai-key
 OPENAI_BASE_URL="http://ai.test/v1"
 OPENAI_MODEL='gpt-test'
+CORS_ALLOWED_ORIGINS=https://app.example.com, https://preview.example.com/
 `)
 
 	cfg, err := loadFromFile(path)
@@ -46,6 +47,10 @@ OPENAI_MODEL='gpt-test'
 	if cfg.OpenAIModel != "gpt-test" {
 		t.Fatalf("OpenAIModel = %q, want gpt-test", cfg.OpenAIModel)
 	}
+	assertStringSlice(t, cfg.CORSAllowedOrigins, []string{
+		"https://app.example.com",
+		"https://preview.example.com",
+	})
 }
 
 func TestLoadFromFileIgnoresProcessEnvironment(t *testing.T) {
@@ -92,22 +97,12 @@ func TestLoadFromFileAppliesDefaults(t *testing.T) {
 }
 
 func TestLoadFindsProjectRootDotEnv(t *testing.T) {
+	clearConfigEnv(t)
 	root := createProjectRoot(t)
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("APP_PORT=7070\nDATABASE_URL=postgres://root-file\n"), 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("get working directory: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(cwd); err != nil {
-			t.Fatalf("restore working directory: %v", err)
-		}
-	})
-	if err := os.Chdir(filepath.Join(root, "backend", "internal", "config")); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
+	chdir(t, filepath.Join(root, "backend", "internal", "config"))
 
 	cfg, err := Load()
 	if err != nil {
@@ -118,6 +113,56 @@ func TestLoadFindsProjectRootDotEnv(t *testing.T) {
 	}
 	if cfg.DatabaseURL != "postgres://root-file" {
 		t.Fatalf("DatabaseURL = %q, want postgres://root-file", cfg.DatabaseURL)
+	}
+}
+
+func TestLoadUsesProcessEnvironmentWithoutDotEnv(t *testing.T) {
+	clearConfigEnv(t)
+	root := createProjectRoot(t)
+	chdir(t, filepath.Join(root, "backend", "internal", "config"))
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("APP_PORT", "6060")
+	t.Setenv("DATABASE_URL", "postgres://env-only")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com, https://api.example.com/")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.AppEnv != "production" {
+		t.Fatalf("AppEnv = %q, want production", cfg.AppEnv)
+	}
+	if cfg.AppPort != ":6060" {
+		t.Fatalf("AppPort = %q, want :6060", cfg.AppPort)
+	}
+	if cfg.DatabaseURL != "postgres://env-only" {
+		t.Fatalf("DatabaseURL = %q, want postgres://env-only", cfg.DatabaseURL)
+	}
+	assertStringSlice(t, cfg.CORSAllowedOrigins, []string{
+		"https://app.example.com",
+		"https://api.example.com",
+	})
+}
+
+func TestLoadProcessEnvironmentOverridesDotEnv(t *testing.T) {
+	clearConfigEnv(t)
+	root := createProjectRoot(t)
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("APP_PORT=7070\nDATABASE_URL=postgres://file\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	chdir(t, filepath.Join(root, "backend", "internal", "config"))
+	t.Setenv("APP_PORT", "9090")
+	t.Setenv("DATABASE_URL", "postgres://env")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.AppPort != ":9090" {
+		t.Fatalf("AppPort = %q, want :9090", cfg.AppPort)
+	}
+	if cfg.DatabaseURL != "postgres://env" {
+		t.Fatalf("DatabaseURL = %q, want postgres://env", cfg.DatabaseURL)
 	}
 }
 
@@ -149,6 +194,54 @@ func createProjectRoot(t *testing.T) string {
 		t.Fatalf("write go.mod: %v", err)
 	}
 	return root
+}
+
+func chdir(t *testing.T, dir string) {
+	t.Helper()
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	})
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+}
+
+func clearConfigEnv(t *testing.T) {
+	t.Helper()
+
+	for _, key := range []string{
+		"APP_ENV",
+		"APP_PORT",
+		"DATABASE_URL",
+		"LOG_LEVEL",
+		"CORS_ALLOWED_ORIGINS",
+		"MAIMEMO_TOKEN",
+		"OPENAI_API_KEY",
+		"OPENAI_BASE_URL",
+		"OPENAI_MODEL",
+	} {
+		t.Setenv(key, "")
+	}
+}
+
+func assertStringSlice(t *testing.T, got, want []string) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("slice len = %d (%v), want %d (%v)", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("slice[%d] = %q, want %q (got %v, want %v)", i, got[i], want[i], got, want)
+		}
+	}
 }
 
 func writeEnvFile(t *testing.T, content string) string {

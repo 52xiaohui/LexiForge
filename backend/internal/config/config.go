@@ -1,8 +1,9 @@
-// Package config loads runtime configuration from the project root .env file.
+// Package config loads runtime configuration from the process environment and
+// the optional project root .env file.
 //
 // Defaults target a local developer database. Real secrets (MAIMEMO_TOKEN,
 // OPENAI_API_KEY, ...) are never given a non-empty default; they must come from
-// .env.
+// the environment or .env.
 package config
 
 import (
@@ -22,23 +23,32 @@ type Config struct {
 	DatabaseURL string
 	LogLevel    string // debug | info | warn | error
 
-	// Pass-through secrets: empty until filled by the user's .env.
+	CORSAllowedOrigins []string
+
+	// Pass-through secrets: empty until filled by env or .env.
 	MaimemoToken  string
 	OpenAIAPIKey  string
 	OpenAIBaseURL string
 	OpenAIModel   string
 }
 
-// Load reads the project root .env file and returns a populated Config.
+// Load reads an optional project root .env file, overlays process environment
+// values, and returns a populated Config.
 //
-// All MVP defaults are documented in .env.example at the repo root; keep both
-// in sync.
+// Process environment values take precedence so Docker / PaaS deployments can
+// use native env configuration. All MVP defaults are documented in .env.example
+// at the repo root; keep both in sync.
 func Load() (Config, error) {
-	envPath, err := findEnvFile()
-	if err != nil {
-		return Config{}, err
+	values := make(map[string]string)
+	if envPath, err := findEnvFile(); err == nil {
+		fileValues, err := readEnvFile(envPath)
+		if err != nil {
+			return Config{}, err
+		}
+		mergeValues(values, fileValues)
 	}
-	return loadFromFile(envPath)
+	mergeValues(values, readProcessEnv())
+	return loadFromValues(values)
 }
 
 func loadFromFile(path string) (Config, error) {
@@ -51,14 +61,15 @@ func loadFromFile(path string) (Config, error) {
 
 func loadFromValues(values map[string]string) (Config, error) {
 	c := Config{
-		AppEnv:        envValue(values, "APP_ENV", "development"),
-		AppPort:       envValue(values, "APP_PORT", "8080"),
-		DatabaseURL:   envValue(values, "DATABASE_URL", "postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable"),
-		LogLevel:      envValue(values, "LOG_LEVEL", "info"),
-		MaimemoToken:  values["MAIMEMO_TOKEN"],
-		OpenAIAPIKey:  values["OPENAI_API_KEY"],
-		OpenAIBaseURL: envValue(values, "OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:   envValue(values, "OPENAI_MODEL", "gpt-4o-mini"),
+		AppEnv:             envValue(values, "APP_ENV", "development"),
+		AppPort:            envValue(values, "APP_PORT", "8080"),
+		DatabaseURL:        envValue(values, "DATABASE_URL", "postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable"),
+		LogLevel:           envValue(values, "LOG_LEVEL", "info"),
+		CORSAllowedOrigins: parseCSVList(values["CORS_ALLOWED_ORIGINS"]),
+		MaimemoToken:       values["MAIMEMO_TOKEN"],
+		OpenAIAPIKey:       values["OPENAI_API_KEY"],
+		OpenAIBaseURL:      envValue(values, "OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:        envValue(values, "OPENAI_MODEL", "gpt-4o-mini"),
 	}
 
 	if c.DatabaseURL == "" {
@@ -81,6 +92,47 @@ func envValue(values map[string]string, key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func mergeValues(dst, src map[string]string) {
+	for key, value := range src {
+		dst[key] = value
+	}
+}
+
+func readProcessEnv() map[string]string {
+	values := make(map[string]string)
+	for _, key := range []string{
+		"APP_ENV",
+		"APP_PORT",
+		"DATABASE_URL",
+		"LOG_LEVEL",
+		"CORS_ALLOWED_ORIGINS",
+		"MAIMEMO_TOKEN",
+		"OPENAI_API_KEY",
+		"OPENAI_BASE_URL",
+		"OPENAI_MODEL",
+	} {
+		if value := os.Getenv(key); value != "" {
+			values[key] = value
+		}
+	}
+	return values
+}
+
+func parseCSVList(value string) []string {
+	if value == "" {
+		return nil
+	}
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		item = strings.TrimRight(item, "/")
+		if item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 func findEnvFile() (string, error) {

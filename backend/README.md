@@ -71,10 +71,20 @@ The integration tests create and drop a random schema inside that database.
 | `APP_PORT` | no | `8080` | leading `:` optional |
 | `DATABASE_URL` | yes | dev default | Postgres DSN |
 | `LOG_LEVEL` | no | `info` | debug / info / warn / error |
+| `CORS_ALLOWED_ORIGINS` | no | — | comma-separated browser origins allowed to call the API; `*` allows any browser origin |
 | `MAIMEMO_TOKEN` | no | — | MVP single-user MaiMemo token |
 | `OPENAI_API_KEY` | no | — | required for article generation |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | OpenAI-compatible endpoints |
 | `OPENAI_MODEL` | no | `gpt-4o-mini` | overrideable per request later |
+
+Runtime config is read from process environment first, then the optional project
+root `.env` file. Use Docker / 1Panel environment variables in production; keep
+`.env` as the local development fallback.
+
+When `CORS_ALLOWED_ORIGINS=*`, the API reflects the request `Origin` instead of
+returning `Access-Control-Allow-Origin: *`, so it remains compatible with the
+current credentials header. Prefer exact frontend origins for public production
+deployments.
 
 ## Layout
 
