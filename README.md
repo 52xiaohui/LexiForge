@@ -35,7 +35,7 @@ OpenAI-compatible 模型生成带有目标词的英文阅读材料。
 | 导出能力 | 由后端提供文章 Markdown 导出 |
 
 MVP 模式是 `external_assist`：LexiForge 是墨墨或其他背词工具的语境阅读助手，
-不会声称修改外部 App 的学习状态。
+不会改动外部 App 的学习状态。
 
 ## 核心流程
 
@@ -78,7 +78,7 @@ graph TB
     API --> AI
 ```
 
-前端是纯静态 SPA，只负责渲染体验、管理本地 UI 偏好，并通过
+前端是纯静态 SPA，只负责 UI 渲染、管理本地偏好，并通过
 `VITE_API_BASE_URL` 调用后端 REST API。
 
 后端承担业务核心：同步、评分、文章生成、覆盖率校验、阅读进度、本地学习事件、
@@ -203,7 +203,7 @@ cd backend
 go test ./...
 ```
 
-前端，本仓库中更可靠的是直接调用本地二进制：
+前端，在本仓库里直接调用本地二进制更可靠：
 
 ```bash
 cd frontend
@@ -277,15 +277,14 @@ full third-party authorization headers
 
 ## 当前状态
 
-仓库当前进度文档记录为：
+仓库当前进度记录为：
 
 ```text
 Stage: MVP data foundation stabilization
 Status: Technical debt pass complete; data foundation stable
 ```
 
-前后端已经使用真实持久化语义来处理单词偏好、词汇事件、文章进度、文章生成参数和
-带进度的文章列表。
+前后端已对单词偏好、词汇事件、文章进度、文章生成参数和带进度的文章列表实现了真正的持久化。
 
 ## 许可证
 
