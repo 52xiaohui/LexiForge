@@ -10,11 +10,8 @@ import { toast } from "sonner"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-
-function messageOf(err: unknown, fallback: string): string {
-  if (err instanceof Error && err.message) return err.message
-  return fallback
-}
+import { MaimemoSyncProvider } from "@/hooks/use-maimemo-sync"
+import { errorMessage } from "@/lib/errors"
 
 export function Providers({ children }: { children: ReactNode }) {
   // Single QueryClient instance per mount, shared MutationCache / QueryCache
@@ -37,7 +34,7 @@ export function Providers({ children }: { children: ReactNode }) {
           onError: (error, query) => {
             if (query.meta?.silent) return
             toast.error("加载失败", {
-              description: messageOf(error, "请稍后再试。"),
+              description: errorMessage(error),
             })
           },
         }),
@@ -45,7 +42,7 @@ export function Providers({ children }: { children: ReactNode }) {
           onError: (error, _variables, _context, mutation) => {
             if (mutation.meta?.silent) return
             toast.error("操作失败", {
-              description: messageOf(error, "请稍后再试。"),
+              description: errorMessage(error),
             })
           },
         }),
@@ -55,10 +52,12 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={150}>
-          {children}
-          <Toaster />
-        </TooltipProvider>
+        <MaimemoSyncProvider>
+          <TooltipProvider delayDuration={150}>
+            {children}
+            <Toaster />
+          </TooltipProvider>
+        </MaimemoSyncProvider>
       </QueryClientProvider>
     </ThemeProvider>
   )
