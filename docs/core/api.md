@@ -8,10 +8,20 @@ All endpoints are under:
 /api/v1
 ```
 
+Production requests require:
+
+```http
+Authorization: Bearer <APP_ACCESS_TOKEN>
+```
+
+`GET /session` verifies the token. Development stays open when
+`APP_ACCESS_TOKEN` is empty. CORS is not authentication.
+
 ## MVP Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/session` | Verify the single-user access token |
 | `POST` | `/sync/maimemo` | Sync MaiMemo records synchronously |
 | `GET` | `/sync/latest` | Latest sync summary |
 | `GET` | `/vocab/records` | Paginated vocab records |
@@ -21,6 +31,7 @@ All endpoints are under:
 | `PUT` | `/vocab/:id/preferences` | Ignored/pinned preferences |
 | `POST` | `/word-events` | Record word learning event |
 | `POST` | `/articles/generate` | Generate and save article |
+| `POST` | `/articles/preview` | Preview the exact recommendation-selected targets |
 | `POST` | `/articles/:id/regenerate` | Regenerate from stored generation params |
 | `GET` | `/articles` | Article list, including current user's progress status |
 | `GET` | `/articles/:id` | Article detail |
@@ -28,6 +39,7 @@ All endpoints are under:
 | `GET` | `/articles/:id/export.md` | Backend Markdown export |
 | `GET` | `/articles/:id/progress` | Read article progress |
 | `PUT` | `/articles/:id/progress` | Update article progress |
+| `GET` | `/articles/generation-runs` | Inspect recent AI attempts, latency, tokens, and failures |
 
 ## Sync
 
@@ -144,6 +156,24 @@ exposed_in_article
 ## Article Generation
 
 ```text
+POST /articles/preview
+```
+
+Preview request:
+
+```json
+{
+  "target_word_count": 30,
+  "target_word_ids": ["study-record-uuid"]
+}
+```
+
+The response is produced by the same `recommendation v2` selector used by
+generation. Every word includes `recommendation_score`,
+`recommendation_version`, and `recommendation_reasons`; the frontend does not
+approximate the selection locally.
+
+```text
 POST /articles/generate
 ```
 
@@ -181,11 +211,22 @@ Response:
 
 Every generation creates a new `articles` row and new `article_words` rows. Regeneration reuses the previous article's `generation_params` and creates another article.
 
+Generate and regenerate share a process-local per-minute budget. Exceeding it
+returns `429 RATE_LIMITED` with `Retry-After`.
+
 ```text
 POST /articles/:id/regenerate
 ```
 
 The backend reads the source article's `generation_params`, reuses the stored `target_record_ids`, and creates a new article. The old article remains unchanged.
+
+```text
+GET /articles/generation-runs?limit=20
+```
+
+Returns the latest generation operations, including failed runs. Fields include
+`status`, `attempt_count`, `duration_ms`, `input_tokens`, `output_tokens`,
+`coverage_rate`, `model_name`, and a non-sensitive `error_code`.
 
 ## Article Detail
 

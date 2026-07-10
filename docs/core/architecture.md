@@ -108,7 +108,22 @@ graph TB
     class FE,API app
 ```
 
-前端是纯静态资源包，不持有 Token、不直接调用墨墨/AI。所有第三方调用都经过 Go 后端代理，便于做 Token 加密、限流和日志脱敏。
+前端是纯静态资源包，不持有墨墨或 AI Token，也不直接调用第三方服务。生产环境的单用户访问令牌由用户运行时输入并只保存在 `sessionStorage`。所有第三方调用都经过 Go 后端代理，便于限流和日志脱敏。
+
+MVP API 边界：
+
+```text
+APP_ACCESS_TOKEN -> constant-time Bearer check for /api/v1
+AI_RATE_LIMIT_PER_MINUTE -> generate/regenerate shared process-local budget
+SYNC_RATE_LIMIT_PER_MINUTE -> MaiMemo sync process-local budget
+```
+
+这是个人部署保护，不是多用户认证。注册、JWT、用户级额度和分布式限流仍属于 v0.5。
+
+Schema bootstrapping remains GORM AutoMigrate for the MVP, but the complete
+migration batch is serialized with `pg_advisory_xact_lock`; concurrent test
+packages or application instances cannot race while installing `pgcrypto` or
+altering tables.
 
 ### 后端分层
 
@@ -156,12 +171,6 @@ backend/
     database/
       db.go
       migrations.go
-    auth/
-      handler.go
-      service.go
-      repository.go
-      jwt.go
-      password.go
     user/
       model.go
       repository.go
@@ -194,9 +203,9 @@ backend/
     crypto/
       aes_gcm.go
     middleware/
-      auth.go
+      access.go
       cors.go
-      ratelimit.go
+      rate_limit.go
       logger.go
       recover.go
     export/

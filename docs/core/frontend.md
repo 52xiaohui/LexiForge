@@ -13,7 +13,9 @@
 /articles/:id
 ```
 
-No login, settings, token configuration, reports, or exercises in MVP.
+No registration, account settings, reports, or exercises in MVP. Production
+deployments show a single-user access gate; the token is entered at runtime and
+kept only in `sessionStorage`.
 
 ## Dashboard
 
@@ -64,6 +66,8 @@ Do not use frontend memory sets as the source of truth for ignored/mastered/reco
 - article length: short/medium/long
 - target word count
 - optional `target_word_ids` from `/vocab/weak`
+- a backend-driven preview using the exact same recommendation selector as
+  article generation
 
 Validation:
 

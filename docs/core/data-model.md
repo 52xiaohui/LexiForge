@@ -12,6 +12,7 @@ vocab_words
 study_records
 articles
 article_words
+article_generation_runs
 user_word_preferences
 word_learning_events
 user_article_progress
@@ -108,6 +109,7 @@ event_type
 source
 metadata jsonb
 created_at
+index(user_id, word_id, event_type, created_at desc)
 ```
 
 MVP event types:
@@ -165,6 +167,10 @@ coverage_rate
 generation_status    succeeded | low_coverage | failed
 model_name
 prompt_version
+generation_attempts
+generation_duration_ms
+input_tokens
+output_tokens
 created_at
 updated_at
 deleted_at nullable
@@ -180,7 +186,16 @@ deleted_at nullable
   "target_word_count": 30,
   "target_record_ids": ["..."],
   "target_word_ids": ["..."],
-  "selection_mode": "manual"
+  "selection_mode": "manual",
+  "selection_version": "v2",
+  "target_recommendations": [
+    {
+      "record_id": "...",
+      "word_id": "...",
+      "score": 155,
+      "reasons": {"external_weak_score": 120, "failed_in_context": 35}
+    }
+  ]
 }
 ```
 
@@ -203,6 +218,24 @@ unique(article_id, word_id)
 ```
 
 Covered words have offsets. Missing target words still get a row with `is_covered=false`.
+
+`article_generation_runs` stores one row for every AI generation operation,
+including failures that never produce an article:
+
+```text
+id
+user_id
+article_id nullable
+status              running | succeeded | low_coverage | failed
+topic / difficulty / article_length / target_word_count
+model_name / prompt_version
+attempt_count
+input_tokens / output_tokens
+duration_ms
+coverage_rate
+error_code
+created_at / updated_at
+```
 
 ## Scoring
 
@@ -237,7 +270,27 @@ STICKING       +50
 study_count    +min(study_count, 30)
 ```
 
-MVP can record `word_learning_events` without feeding them into scoring yet. When events start affecting scores, bump `score_version`.
+Synced `mastery_score` and `weak_score` remain external-provider facts under
+`score_version=v1`. Local events do not overwrite them.
+
+Automatic article selection adds a disposable `recommendation v2` ranking:
+
+```text
+base                                      external weak_score
+pinned                                    +40
+latest feedback failed, within 30 days    +35
+latest feedback failed, older             +15
+latest feedback recognized, within 7 days -35
+latest feedback recognized, 8-30 days     -20
+latest feedback recognized, older          -5
+article exposure, within 24 hours          -25
+article exposure, 2-7 days                 -10
+```
+
+`manually_mastered` and active `ignored` preferences remain hard exclusions.
+Expired `ignored_until` values no longer exclude a word. Each article stores the
+selected words' recommendation score and reason map inside `generation_params`
+so a selection can be audited later.
 
 ## Selection
 

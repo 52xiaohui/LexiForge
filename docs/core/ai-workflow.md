@@ -10,19 +10,21 @@
 
 ```mermaid
 flowchart TD
-    Start([用户提交生成请求<br/>主题 / 难度 / 目标词数<br/>+ 可选 target_word_ids]) --> Pick[选目标词<br/>用户勾选优先<br/>不足按 70/20/10 自动补齐]
-    Pick --> Prompt[构建 Prompt<br/>主题 + 难度 + 目标词<br/>+ 结构化 JSON 输出约束]
+    Start([用户提交生成请求<br/>主题 / 难度 / 目标词数<br/>+ 可选 target_word_ids]) --> Pick[选目标词<br/>用户勾选优先<br/>recommendation v2 自动补齐]
+    Pick --> Run[创建 article_generation_runs<br/>status=running]
+    Run --> Prompt[构建 Prompt<br/>主题 + 难度 + 目标词<br/>+ 结构化 JSON 输出约束]
     Prompt --> Call[调用 AI API]
     Call --> Parse{JSON 解析成功?}
-    Parse -->|否| Fail[标记失败<br/>返回错误响应<br/>不保存文章]
+    Parse -->|否| Fail[记录失败指标<br/>返回错误响应<br/>不保存文章]
     Parse -->|是| Sanity[Sanity Check<br/>context 拼接 IndexOf<br/>定位 + 计算 coverage_rate]
     Sanity --> Cov{覆盖率 ≥ 90%?}
     Cov -->|是| SaveOk[保存 articles<br/>+ article_words 全部目标词<br/>含覆盖与未覆盖]
     Cov -->|否, 重试 < 2| Revise[构建修正 Prompt<br/>列出 missing_words]
     Revise --> Call
     Cov -->|否, 已重试 2 次| SaveLow[保存文章<br/>标记低覆盖率<br/>前端提示用户]
-    SaveOk --> Done([返回前端展示])
-    SaveLow --> Done
+    SaveOk --> Metrics[完成生成指标<br/>attempts / latency / tokens]
+    SaveLow --> Metrics
+    Metrics --> Done([返回前端展示])
     Fail --> Done
 
     classDef ok fill:#e8f5e9,stroke:#4caf50
@@ -35,7 +37,7 @@ flowchart TD
 
 二次修正最多 1-2 次，避免成本失控；超出后保存为低覆盖率文章并提示用户而不是无限重试。
 
-### v1 扩展：练习题与用量统计
+### v1 扩展：练习题与配额
 
 v1 阶段 MVP 主流程**不变**，新增两条独立路径，互不污染：
 
@@ -47,13 +49,13 @@ flowchart LR
     D --> E[解析题目 + 答案]
     E --> F[INSERT exercises 行]
 
-    G[每次 AI 调用结束] -.切面记录.-> H[INSERT ai_usage_logs<br/>input_tokens / output_tokens / cost]
-
     classDef v1 fill:#e3f2fd,stroke:#2196f3
-    class A,B,C,D,E,F,G,H v1
+    class A,B,C,D,E,F v1
 ```
 
-练习题生成是**独立端点**，不污染 MVP 文章生成流程。`ai_usage_logs` 也是 v1 才加；MVP 阶段单用户、env Token，不需要做成本统计与多租户用量隔离。
+练习题生成是**独立端点**，不污染 MVP 文章生成流程。MVP 已记录
+生成次数、耗时、token 和安全错误分类；价格换算、用户级额度与账单仍由 v1
+在现有 `article_generation_runs` 基础上扩展。
 
 ## Prompt 原则
 

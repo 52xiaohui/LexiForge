@@ -33,7 +33,9 @@ OpenAI-compatible 模型生成带有目标词的英文阅读材料。
 | 文章生成 | 根据主题、CEFR 难度、文章长度和目标词生成文章 |
 | 覆盖率追踪 | 每个目标词都会写入 `article_words`，包含未覆盖词 |
 | 阅读流程 | 持久化阅读进度和本地词汇反馈事件 |
+| 推荐调整 | `recommendation v2` 用本地反馈调整后续目标词顺序 |
 | 导出能力 | 由后端提供文章 Markdown 导出 |
+| 访问保护 | 生产环境使用单用户访问令牌和生成/同步限流 |
 
 MVP 模式是 `external_assist`：LexiForge 是墨墨或其他背词工具的语境阅读助手，
 不会改动外部 App 的学习状态。
@@ -47,7 +49,7 @@ flowchart LR
     C --> D[生成阅读文章]
     D --> E[高亮阅读]
     E --> F[记录本地反馈]
-    F --> B
+    F -->|recommendation v2| C
 ```
 
 ## 功能入口
@@ -110,11 +112,22 @@ cp .env.example .env
 
 ```bash
 DATABASE_URL=postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable
+APP_ACCESS_TOKEN=
+AI_RATE_LIMIT_PER_MINUTE=5
+SYNC_RATE_LIMIT_PER_MINUTE=2
 MAIMEMO_TOKEN=
 OPENAI_API_KEY=
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
+
+生产部署必须配置至少 32 字符的 `APP_ACCESS_TOKEN`，可以这样生成：
+
+```bash
+openssl rand -hex 32
+```
+
+前端不会把这个令牌编译进静态资源。首次打开生产页面时输入令牌，它只保存在当前浏览器会话中。开发环境留空时 API 保持开放。
 
 首次本地运行时，创建 PostgreSQL 用户和数据库：
 
@@ -214,6 +227,12 @@ cd frontend
 ./node_modules/.bin/vite build
 ```
 
+带 PostgreSQL 的后端集成测试：
+
+```bash
+LEXIFORGE_TEST_DATABASE_URL="postgres://lexiforge:lexiforge@localhost:5432/lexiforge_test?sslmode=disable" go test ./...
+```
+
 仓库格式检查：
 
 ```bash
@@ -281,11 +300,11 @@ full third-party authorization headers
 仓库当前进度记录为：
 
 ```text
-Stage: MVP data foundation stabilization
-Status: Technical debt pass complete; data foundation stable
+Stage: MVP pilot hardening
+Status: P0/P1 implementation complete; local validation passed
 ```
 
-前后端已对单词偏好、词汇事件、文章进度、文章生成参数和带进度的文章列表实现了真正的持久化。
+当前版本具备单用户访问保护、生成与同步限流、后端统一选词预览、目标词快照重生成、反馈驱动推荐 v2、生成运行指标和 CI 门禁。完整状态见 [`docs/progress/current.md`](docs/progress/current.md)。
 
 ## 许可证
 

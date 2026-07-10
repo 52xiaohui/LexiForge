@@ -2,8 +2,9 @@
 
 Go + Gin + GORM + PostgreSQL backend for LexiForge. MVP scope: single-user,
 MaiMemo sync, vocabulary scoring, AI article generation, reading progress,
-local word-learning events, dictionary lookup, and Markdown export. v0.5+
-topics such as auth, encrypted third-party token storage, limits, async jobs,
+local word-learning events, feedback-aware ranking, generation telemetry,
+dictionary lookup, and Markdown export. v0.5+ topics such as multi-user auth,
+encrypted third-party token storage, async jobs,
 and user-managed imports are intentionally absent.
 
 The MVP backend core is implemented: MaiMemo sync pulls single-user records,
@@ -16,9 +17,9 @@ article Markdown.
 
 From the repo root:
 
-```powershell
+```bash
 # 1. Copy env and edit secrets/database URL if needed.
-Copy-Item .env.example .env
+cp .env.example .env
 
 # 2. Create the default local database/user once.
 #    If they already exist, keep the existing ones.
@@ -26,13 +27,13 @@ psql -U postgres -c "CREATE ROLE lexiforge LOGIN PASSWORD 'lexiforge';"
 psql -U postgres -c "CREATE DATABASE lexiforge OWNER lexiforge;"
 
 # 3. Run the server.
-Set-Location backend
+cd backend
 go run ./cmd/server
 ```
 
 Then verify the server from another terminal:
 
-```powershell
+```bash
 curl http://localhost:8080/healthz
 # {"status":"ok"}
 
@@ -58,7 +59,7 @@ Postgres integration tests are opt-in so the default test suite does not
 require a local database. To run them, provide an isolated test database URL:
 
 ```bash
-LEXIFORGE_TEST_DATABASE_URL="postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable" go test ./internal/database
+LEXIFORGE_TEST_DATABASE_URL="postgres://lexiforge:lexiforge@localhost:5432/lexiforge_test?sslmode=disable" go test ./...
 ```
 
 The integration tests create and drop a random schema inside that database.
@@ -72,6 +73,9 @@ The integration tests create and drop a random schema inside that database.
 | `DATABASE_URL` | yes | dev default | Postgres DSN |
 | `LOG_LEVEL` | no | `info` | debug / info / warn / error |
 | `CORS_ALLOWED_ORIGINS` | no | — | comma-separated browser origins allowed to call the API; `*` allows any browser origin |
+| `APP_ACCESS_TOKEN` | production | — | at least 32 characters; protects every `/api/v1` endpoint |
+| `AI_RATE_LIMIT_PER_MINUTE` | no | `5` | process-local budget shared by generate/regenerate |
+| `SYNC_RATE_LIMIT_PER_MINUTE` | no | `2` | process-local budget for MaiMemo sync |
 | `MAIMEMO_TOKEN` | no | — | MVP single-user MaiMemo token |
 | `OPENAI_API_KEY` | no | — | required for article generation |
 | `OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | OpenAI-compatible endpoints |
@@ -80,6 +84,10 @@ The integration tests create and drop a random schema inside that database.
 Runtime config is read from process environment first, then the optional project
 root `.env` file. Use Docker / 1Panel environment variables in production; keep
 `.env` as the local development fallback.
+
+Generate the production token with `openssl rand -hex 32`. The frontend asks
+for it at runtime and stores it in `sessionStorage`; never put it in a `VITE_*`
+variable because Vite values are public build artifacts.
 
 When `CORS_ALLOWED_ORIGINS=*`, the API reflects the request `Origin` instead of
 returning `Access-Control-Allow-Origin: *`, so it remains compatible with the
@@ -107,7 +115,8 @@ backend/
 
 DB tables created by AutoMigrate: `users`, `vocab_words`, `study_records`,
 `user_word_preferences`, `dictionary_entries`, `articles`, `article_words`,
-`user_article_progress`, and `word_learning_events`. The `users` table is
+`article_generation_runs`, `user_article_progress`, and `word_learning_events`.
+The `users` table is
 seeded with a fixed-UUID local-user row
 (`00000000-0000-0000-0000-000000000001`) on every boot.
 
@@ -123,14 +132,16 @@ seeded with a fixed-UUID local-user row
   `apikey`, `access_token`.
 - UUID primary keys via `pgcrypto.gen_random_uuid()`. `pgcrypto` is enabled
   on every boot by `database.RunMigrations`.
+- The single-user API uses constant-time Bearer-token checks. CORS remains a
+  browser boundary, not authentication.
 
 ## What's not here yet
 
 Roughly in priority order:
 - Broader integration tests for sync and API handler flows
-- Authentication and multi-user account boundaries
+- Registration and multi-user account boundaries
 - Encrypted token storage for integrations
-- Async sync/generation jobs and rate limits
+- Async sync/generation jobs and distributed rate limits
 
-v0.5 picks up auth, AES-GCM token storage, Redis-backed limits, async sync
+v0.5 picks up accounts, AES-GCM token storage, Redis-backed limits, async sync
 jobs, and CSV/Anki imports.

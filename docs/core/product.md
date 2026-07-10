@@ -29,9 +29,11 @@ sync/import vocabulary data
 
 ## MVP Scope
 
-MVP is single-user and local/demo oriented:
+MVP is single-user and personal-deployment oriented:
 
 - `MAIMEMO_TOKEN` is configured through environment variables.
+- Production requires a single-user `APP_ACCESS_TOKEN`; this is access
+  protection, not a registration/account system.
 - One seeded `local-user` exists in `users`.
 - Backend syncs MaiMemo learning records into PostgreSQL.
 - Backend calculates `mastery_score` and `weak_score`.
@@ -43,6 +45,10 @@ MVP is single-user and local/demo oriented:
   - ignored/pinned word preferences
   - word learning events
   - article reading progress
+- `recommendation v2` combines external `weak_score` with recent local feedback
+  and exposure cooldowns for future article target selection.
+- Every AI generation run records attempts, latency, token usage, coverage, and
+  a safe failure code.
 - Markdown export is served by the backend.
 
 MVP explicitly does not include:

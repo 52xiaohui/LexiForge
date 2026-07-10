@@ -1,6 +1,6 @@
 # LexiForge Docs
 
-> Last updated: 2026-06-06
+> Last updated: 2026-07-10
 
 Docs are kept small on purpose. Stable design lives in `core/`, active work lives in `progress/`, decisions live in `decisions/`, and non-committed future ideas live in `ideas/`.
 

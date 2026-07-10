@@ -22,7 +22,7 @@ This file is not implementation scope. Move an idea into `core/` or `progress/cu
 - Reading comprehension and fill-blank exercises
 - Mistake tracking
 - Learning reports
-- AI usage logs and quota control
+- AI price calculation and per-user quota control on top of generation runs
 
 ## Exam Mode
 
@@ -61,7 +61,7 @@ Cost controls:
 - daily generation limits
 - model choice by plan
 - retry limits
-- token usage logging
+- plan-aware cost aggregation from recorded token usage
 
 ## Resume Notes
 

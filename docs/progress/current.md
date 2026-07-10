@@ -5,64 +5,60 @@
 ## Stage
 
 ```text
-Stage: MVP data foundation stabilization
-Date: 2026-06-06
-Status: Technical debt pass complete; data foundation stable
+Stage: MVP pilot hardening
+Date: 2026-07-10
+Status: P0/P1 implementation complete; local validation passed, CI pending publish
 ```
 
-Goal: keep MVP small, but make data semantics real before implementation continues.
+Goal: make the single-user MVP safe to deploy, close the generation contract,
+and let local reading feedback influence future article selection without
+overwriting external learning facts.
 
 ## Execution Queue
 
 Work proceeds in this order.
 
-1. [x] Backend schema/model: add MVP data foundation
-   - `users.learning_mode`
-   - `articles.article_length`
-   - `articles.generation_params`
-   - `user_word_preferences`
-   - `word_learning_events`
-   - `user_article_progress`
-2. [x] Backend article generation: persist `article_length` and `generation_params`
-3. [x] Backend article regeneration: reuse previous article `generation_params`
-4. [x] Backend API: implement `PUT /api/v1/vocab/:id/preferences`
-5. [x] Backend API: implement `POST /api/v1/word-events`
-6. [x] Backend API: implement `GET/PUT /api/v1/articles/:id/progress`
-7. [x] Frontend cleanup: remove local fake learning state from API layer
-   - `hiddenWordIds`
-   - `recognizedWordIds`
-   - `readArticleIds`
-8. [x] Frontend weak words: wire ignore/master actions to backend APIs
-9. [x] Frontend article detail: wire recognized/failed/mastered/read progress to backend APIs
-10. [x] Frontend dashboard/history cleanup
-    - remove fake daily progress and streaks
-    - use backend Markdown export
-    - remove fake `recently_covered_count` or backend-drive it
-    - remove outdated “frontend prototype” delete copy
-11. [x] Technical debt pass after data foundation
-    - fix frontend lint gate
-    - persist article `progress_percent` / `last_paragraph_index` from reader
-    - create `exposed_in_article` events when an article first becomes read
-    - remove stale mock-data business store and mock-only API fields
-    - include article progress in article list responses to avoid frontend N+1
-    - update backend/frontend README drift
+1. [x] P0: protect production `/api/v1` with a single-user Bearer token
+2. [x] P0: add browser session unlock without embedding the token in Vite output
+3. [x] P0: rate-limit AI generation/regeneration and MaiMemo sync
+4. [x] P0: route article regeneration through stored target-record snapshots
+5. [x] P0: replace frontend preview approximation with `POST /articles/preview`
+6. [x] P0: show low-coverage articles explicitly in the reader
+7. [x] P0: add backend/frontend CI and gate backend image publication on tests
+8. [x] P1: add feedback-aware `recommendation v2`
+   - latest contextual failure raises priority
+   - recent recognition lowers priority temporarily
+   - recent article exposure adds a diversity cooldown
+   - pinned words receive a boost
+   - ignored and manually mastered words remain hard exclusions
+9. [x] P1: persist recommendation version, score, and reasons in generation snapshots
+10. [x] P1: persist generation attempts, latency, model, tokens, coverage, and safe errors
+11. [x] P1: expose recent telemetry through `GET /articles/generation-runs`
+12. [x] Correct `ignored_until` so expired preferences become eligible again
 
 ## Validation Notes
 
-Latest diagnostic run:
+Latest local diagnostic run:
 
 ```text
-backend: go test ./... passed after task 11 technical debt pass
-frontend: ./node_modules/.bin/tsc --noEmit passed after task 11 technical debt pass
-frontend: ./node_modules/.bin/eslint . passed after task 11 technical debt pass
-frontend: ./node_modules/.bin/vitest run passed after task 11 technical debt pass
-frontend: ./node_modules/.bin/vite build passed after task 11 technical debt pass
+backend: Go 1.26.2 go test ./... passed against an isolated PostgreSQL 17 instance
+backend: Go 1.26.2 go vet ./... passed
+frontend: ./node_modules/.bin/tsc --noEmit passed
+frontend: ./node_modules/.bin/eslint . passed
+frontend: ./node_modules/.bin/vitest run passed (19 tests)
+frontend: ./node_modules/.bin/vite build passed
+repo: git diff --check passed
 ```
 
-Before implementation is considered stable:
+GitHub CI provisions PostgreSQL 17 and sets `LEXIFORGE_TEST_DATABASE_URL`, so
+the integration suite runs there instead of silently skipping. The backend image
+workflow runs the same database-backed test gate before publishing.
+
+Repeat these checks before each deployment:
 
 ```bash
 go test ./...
+go vet ./...
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/eslint .
 ./node_modules/.bin/vitest run
