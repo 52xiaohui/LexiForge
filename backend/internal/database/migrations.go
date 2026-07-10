@@ -22,31 +22,42 @@ import (
 // Idempotent: rerunning it is a no-op once the schema and seed exist. Tests
 // can rely on this to set up clean state.
 func RunMigrations(db *gorm.DB) error {
-	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto`).Error; err != nil {
-		return fmt.Errorf("enable pgcrypto: %w", err)
-	}
-
-	if err := db.AutoMigrate(
-		&user.User{},
-		&vocabulary.VocabWord{},
-		&vocabulary.StudyRecord{},
-		&vocabulary.UserWordPreference{},
-		&dictionary.Entry{},
-		&article.Article{},
-		&article.ArticleWord{},
-		&article.UserArticleProgress{},
-		&learning.WordLearningEvent{},
-	); err != nil {
-		return fmt.Errorf("auto migrate: %w", err)
-	}
-
-	if err := seedLocalUser(db); err != nil {
-		return fmt.Errorf("seed local user: %w", err)
+	// CREATE EXTENSION IF NOT EXISTS can still race in pg_extension when two
+	// instances boot together. A database-scoped transaction lock serializes the
+	// complete migration batch without requiring an external migration service.
+	const migrationLockID int64 = 0x4c657869466f7267
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(?)`, migrationLockID).Error; err != nil {
+			return fmt.Errorf("acquire migration lock: %w", err)
+		}
+		if err := tx.Exec(`CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public`).Error; err != nil {
+			return fmt.Errorf("enable pgcrypto: %w", err)
+		}
+		if err := tx.AutoMigrate(
+			&user.User{},
+			&vocabulary.VocabWord{},
+			&vocabulary.StudyRecord{},
+			&vocabulary.UserWordPreference{},
+			&dictionary.Entry{},
+			&article.Article{},
+			&article.ArticleGenerationRun{},
+			&article.ArticleWord{},
+			&article.UserArticleProgress{},
+			&learning.WordLearningEvent{},
+		); err != nil {
+			return fmt.Errorf("auto migrate: %w", err)
+		}
+		if err := seedLocalUser(tx); err != nil {
+			return fmt.Errorf("seed local user: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	slog.Info("migrations applied", "tables", []string{
 		"users", "vocab_words", "study_records", "user_word_preferences",
-		"dictionary_entries", "articles", "article_words", "user_article_progress",
+		"dictionary_entries", "articles", "article_generation_runs", "article_words", "user_article_progress",
 		"word_learning_events",
 	})
 	return nil

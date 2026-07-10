@@ -14,28 +14,59 @@ import (
 // Article mirrors the `articles` table from docs/core/data-model.md.
 // MVP-only fields; ai_usage_logs / exercises are introduced later.
 type Article struct {
-	ID               uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	UserID           uuid.UUID       `gorm:"type:uuid;not null;index" json:"user_id"`
-	Title            string          `gorm:"type:varchar(255);not null;default:''" json:"title"`
-	Topic            string          `gorm:"type:varchar(128);not null;default:''" json:"topic"`
-	Difficulty       string          `gorm:"type:varchar(32);not null;default:''" json:"difficulty"`
-	ArticleLength    string          `gorm:"type:varchar(16);not null;default:'medium'" json:"article_length"`
-	ContentMarkdown  string          `gorm:"type:text;not null;default:''" json:"content_markdown"`
-	Summary          string          `gorm:"type:text;not null;default:''" json:"summary"`
-	GenerationParams datatypes.JSON  `gorm:"type:jsonb;not null;default:'{}'" json:"generation_params"`
-	TargetWordCount  int             `gorm:"not null;default:0" json:"target_word_count"`
-	CoveredWordCount int             `gorm:"not null;default:0" json:"covered_word_count"`
-	CoverageRate     decimal.Decimal `gorm:"type:decimal(6,4);not null;default:0" json:"coverage_rate"`
-	GenerationStatus string          `gorm:"type:varchar(32);not null;default:'pending'" json:"generation_status"`
-	ModelName        string          `gorm:"type:varchar(64);not null;default:''" json:"model_name"`
-	PromptVersion    string          `gorm:"type:varchar(16);not null;default:'v1'" json:"prompt_version"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
-	DeletedAt        *time.Time      `gorm:"index" json:"deleted_at,omitempty"`
-	User             user.User       `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	ID                   uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID               uuid.UUID       `gorm:"type:uuid;not null;index" json:"user_id"`
+	Title                string          `gorm:"type:varchar(255);not null;default:''" json:"title"`
+	Topic                string          `gorm:"type:varchar(128);not null;default:''" json:"topic"`
+	Difficulty           string          `gorm:"type:varchar(32);not null;default:''" json:"difficulty"`
+	ArticleLength        string          `gorm:"type:varchar(16);not null;default:'medium'" json:"article_length"`
+	ContentMarkdown      string          `gorm:"type:text;not null;default:''" json:"content_markdown"`
+	Summary              string          `gorm:"type:text;not null;default:''" json:"summary"`
+	GenerationParams     datatypes.JSON  `gorm:"type:jsonb;not null;default:'{}'" json:"generation_params"`
+	TargetWordCount      int             `gorm:"not null;default:0" json:"target_word_count"`
+	CoveredWordCount     int             `gorm:"not null;default:0" json:"covered_word_count"`
+	CoverageRate         decimal.Decimal `gorm:"type:decimal(6,4);not null;default:0" json:"coverage_rate"`
+	GenerationStatus     string          `gorm:"type:varchar(32);not null;default:'pending'" json:"generation_status"`
+	ModelName            string          `gorm:"type:varchar(64);not null;default:''" json:"model_name"`
+	PromptVersion        string          `gorm:"type:varchar(16);not null;default:'v1'" json:"prompt_version"`
+	GenerationAttempts   int             `gorm:"not null;default:0" json:"generation_attempts"`
+	GenerationDurationMS int64           `gorm:"not null;default:0" json:"generation_duration_ms"`
+	InputTokens          int             `gorm:"not null;default:0" json:"input_tokens"`
+	OutputTokens         int             `gorm:"not null;default:0" json:"output_tokens"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	DeletedAt            *time.Time      `gorm:"index" json:"deleted_at,omitempty"`
+	User                 user.User       `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 }
 
 func (Article) TableName() string { return "articles" }
+
+// ArticleGenerationRun records every paid generation operation, including
+// failures that never produce an Article row.
+type ArticleGenerationRun struct {
+	ID              uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	UserID          uuid.UUID       `gorm:"type:uuid;not null;index" json:"user_id"`
+	ArticleID       *uuid.UUID      `gorm:"type:uuid;index" json:"article_id,omitempty"`
+	Status          string          `gorm:"type:varchar(32);not null;default:'running';index" json:"status"`
+	Topic           string          `gorm:"type:varchar(128);not null;default:''" json:"topic"`
+	Difficulty      string          `gorm:"type:varchar(32);not null;default:''" json:"difficulty"`
+	ArticleLength   string          `gorm:"type:varchar(16);not null;default:'medium'" json:"article_length"`
+	TargetWordCount int             `gorm:"not null;default:0" json:"target_word_count"`
+	ModelName       string          `gorm:"type:varchar(64);not null;default:''" json:"model_name"`
+	PromptVersion   string          `gorm:"type:varchar(16);not null;default:'v1'" json:"prompt_version"`
+	AttemptCount    int             `gorm:"not null;default:0" json:"attempt_count"`
+	InputTokens     int             `gorm:"not null;default:0" json:"input_tokens"`
+	OutputTokens    int             `gorm:"not null;default:0" json:"output_tokens"`
+	DurationMS      int64           `gorm:"not null;default:0" json:"duration_ms"`
+	CoverageRate    decimal.Decimal `gorm:"type:decimal(6,4);not null;default:0" json:"coverage_rate"`
+	ErrorCode       string          `gorm:"type:varchar(64);not null;default:''" json:"error_code"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	User            user.User       `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
+	Article         *Article        `gorm:"foreignKey:ArticleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"-"`
+}
+
+func (ArticleGenerationRun) TableName() string { return "article_generation_runs" }
 
 // ArticleWord mirrors the `article_words` table from docs/core/data-model.md.
 // Defensive `unique(article_id, word_id)` — duplicate inserts indicate a bug.

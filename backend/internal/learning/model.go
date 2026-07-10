@@ -23,13 +23,13 @@ const (
 // never pretends to modify the upstream app's state.
 type WordLearningEvent struct {
 	ID        uuid.UUID            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	UserID    uuid.UUID            `gorm:"type:uuid;not null;index" json:"user_id"`
-	WordID    uuid.UUID            `gorm:"type:uuid;not null;index" json:"word_id"`
+	UserID    uuid.UUID            `gorm:"type:uuid;not null;index;index:idx_word_learning_events_recommendation,priority:1" json:"user_id"`
+	WordID    uuid.UUID            `gorm:"type:uuid;not null;index;index:idx_word_learning_events_recommendation,priority:2" json:"word_id"`
 	ArticleID *uuid.UUID           `gorm:"type:uuid;index" json:"article_id,omitempty"`
-	EventType string               `gorm:"type:varchar(64);not null;index" json:"event_type"`
+	EventType string               `gorm:"type:varchar(64);not null;index;index:idx_word_learning_events_recommendation,priority:3" json:"event_type"`
 	Source    string               `gorm:"type:varchar(64);not null;default:''" json:"source"`
 	Metadata  datatypes.JSON       `gorm:"type:jsonb;not null;default:'{}'" json:"metadata"`
-	CreatedAt time.Time            `json:"created_at"`
+	CreatedAt time.Time            `gorm:"index:idx_word_learning_events_recommendation,priority:4,sort:desc" json:"created_at"`
 	User      user.User            `gorm:"foreignKey:UserID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 	Word      vocabulary.VocabWord `gorm:"foreignKey:WordID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 	Article   *article.Article     `gorm:"foreignKey:ArticleID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"-"`

@@ -46,6 +46,8 @@ func (fakeArticleAI) GenerateArticle(_ context.Context, req ai.GenerateArticleRe
 		CoveredWords:    claims,
 		MissingWords:    []string{},
 		ModelName:       "fake-integration-model",
+		InputTokens:     11,
+		OutputTokens:    22,
 	}, nil
 }
 
@@ -85,6 +87,16 @@ func TestArticleGenerationPersistsAndReadsPostgresRows(t *testing.T) {
 	}
 	if detail.Article.Title != "Integration Article" || len(detail.Words) != 15 {
 		t.Fatalf("detail title=%q words=%d, want article with 15 words", detail.Article.Title, len(detail.Words))
+	}
+	if detail.Article.GenerationAttempts != 1 || detail.Article.InputTokens != 11 || detail.Article.OutputTokens != 22 {
+		t.Fatalf("article metrics = attempts %d tokens %d/%d, want 1 and 11/22", detail.Article.GenerationAttempts, detail.Article.InputTokens, detail.Article.OutputTokens)
+	}
+	var run article.ArticleGenerationRun
+	if err := db.Where("article_id = ?", got.ArticleID).First(&run).Error; err != nil {
+		t.Fatalf("load generation run: %v", err)
+	}
+	if run.Status != "succeeded" || run.AttemptCount != 1 || run.InputTokens != 11 || run.OutputTokens != 22 {
+		t.Fatalf("generation run = %#v, want persisted successful metrics", run)
 	}
 	for _, word := range detail.Words {
 		if !word.IsCovered || word.CharOffset == nil || word.CharLength == nil {
@@ -144,6 +156,33 @@ func TestArticleGenerationPersistsAndReadsPostgresRows(t *testing.T) {
 	}
 }
 
+func TestRecommendationV2PromotesRecentContextFailure(t *testing.T) {
+	db := openIntegrationDB(t)
+	records := seedStudyRecords(t, db, 16)
+	failed := records[len(records)-1]
+	userID, err := uuid.Parse(user.LocalUserID)
+	if err != nil {
+		t.Fatalf("parse local user id: %v", err)
+	}
+	if err := db.Create(&learning.WordLearningEvent{
+		UserID: userID, WordID: failed.WordID, EventType: learning.EventFailedInContext,
+		Source: "integration-test", Metadata: datatypes.JSON([]byte(`{}`)),
+	}).Error; err != nil {
+		t.Fatalf("create failure event: %v", err)
+	}
+
+	targets, err := article.NewRepository(db).SelectTargetWords(context.Background(), userID, nil, 15)
+	if err != nil {
+		t.Fatalf("SelectTargetWords returned error: %v", err)
+	}
+	if len(targets) != 15 || targets[0].WordID != failed.WordID {
+		t.Fatalf("first target = %#v, want recently failed word %s", targets[0], failed.WordID)
+	}
+	if targets[0].RecommendationReasons["failed_in_context"] != 35 {
+		t.Fatalf("recommendation reasons = %#v, want recent failure boost", targets[0].RecommendationReasons)
+	}
+}
+
 func openIntegrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := os.Getenv("LEXIFORGE_TEST_DATABASE_URL")
@@ -185,13 +224,14 @@ func openIntegrationDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-func seedStudyRecords(t *testing.T, db *gorm.DB, count int) {
+func seedStudyRecords(t *testing.T, db *gorm.DB, count int) []vocabulary.StudyRecord {
 	t.Helper()
 	userID, err := uuid.Parse(user.LocalUserID)
 	if err != nil {
 		t.Fatalf("parse LocalUserID: %v", err)
 	}
 	now := time.Now().UTC()
+	records := make([]vocabulary.StudyRecord, 0, count)
 	for i := 0; i < count; i++ {
 		word := vocabulary.VocabWord{
 			ID:            uuid.New(),
@@ -224,5 +264,7 @@ func seedStudyRecords(t *testing.T, db *gorm.DB, count int) {
 		if err := db.Create(&record).Error; err != nil {
 			t.Fatalf("create study record %d: %v", i, err)
 		}
+		records = append(records, record)
 	}
+	return records
 }

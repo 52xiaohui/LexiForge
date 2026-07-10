@@ -19,6 +19,7 @@ import (
 
 	"lexiforge/backend/internal/ai"
 	"lexiforge/backend/internal/user"
+	"lexiforge/backend/internal/vocabulary"
 )
 
 const promptVersionV1 = "v1"
@@ -38,6 +39,9 @@ func NewService(repo repository, aiClient ai.Client) *Service {
 
 type repository interface {
 	SelectTargetWords(ctx context.Context, userID uuid.UUID, selectedIDs []uuid.UUID, targetCount int) ([]TargetWordRecord, error)
+	StartGenerationRun(ctx context.Context, run ArticleGenerationRun) (ArticleGenerationRun, error)
+	FailGenerationRun(ctx context.Context, runID uuid.UUID, metrics GenerationRunMetrics) error
+	ListGenerationRuns(ctx context.Context, userID uuid.UUID, limit int) ([]ArticleGenerationRun, error)
 	SaveGeneratedArticle(ctx context.Context, draft ArticleDraft) (ArticleDetail, error)
 	ListArticles(ctx context.Context, userID uuid.UUID, page, pageSize int) (ArticleListResult, error)
 	GetArticle(ctx context.Context, userID, articleID uuid.UUID) (ArticleDetail, error)
@@ -62,6 +66,53 @@ type GenerateResult struct {
 	CoverageRate     float64   `json:"coverage_rate"`
 }
 
+type PreviewRequest struct {
+	TargetWordCount int      `json:"target_word_count"`
+	TargetWordIDs   []string `json:"target_word_ids"`
+}
+
+type GenerationPreviewWord struct {
+	ID                    uuid.UUID      `json:"id"`
+	WordID                uuid.UUID      `json:"word_id"`
+	Spelling              string         `json:"spelling"`
+	LastResponse          string         `json:"last_response"`
+	StudyCount            int            `json:"study_count"`
+	Tags                  []string       `json:"tags"`
+	MasteryScore          int            `json:"mastery_score"`
+	WeakScore             int            `json:"weak_score"`
+	NextStudyDate         *time.Time     `json:"next_study_date"`
+	RecommendationScore   int            `json:"recommendation_score"`
+	RecommendationVersion string         `json:"recommendation_version"`
+	RecommendationReasons map[string]int `json:"recommendation_reasons"`
+}
+
+type GenerationPreviewResponse struct {
+	Words            []GenerationPreviewWord `json:"words"`
+	CountsByResponse map[string]int          `json:"counts_by_response"`
+	StickingCount    int                     `json:"sticking_count"`
+	AutoFillCount    int                     `json:"auto_fill_count"`
+	IsAuto           bool                    `json:"is_auto"`
+}
+
+type GenerationRunResponse struct {
+	ID              uuid.UUID  `json:"id"`
+	ArticleID       *uuid.UUID `json:"article_id,omitempty"`
+	Status          string     `json:"status"`
+	Topic           string     `json:"topic"`
+	Difficulty      string     `json:"difficulty"`
+	ArticleLength   string     `json:"article_length"`
+	TargetWordCount int        `json:"target_word_count"`
+	ModelName       string     `json:"model_name"`
+	PromptVersion   string     `json:"prompt_version"`
+	AttemptCount    int        `json:"attempt_count"`
+	InputTokens     int        `json:"input_tokens"`
+	OutputTokens    int        `json:"output_tokens"`
+	DurationMS      int64      `json:"duration_ms"`
+	CoverageRate    float64    `json:"coverage_rate"`
+	ErrorCode       string     `json:"error_code,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
 type PagedArticles struct {
 	Items    []ArticleListItem `json:"items"`
 	Total    int64             `json:"total"`
@@ -70,21 +121,25 @@ type PagedArticles struct {
 }
 
 type ArticleResponse struct {
-	ID               uuid.UUID       `json:"id"`
-	Title            string          `json:"title"`
-	Topic            string          `json:"topic"`
-	Difficulty       string          `json:"difficulty"`
-	ArticleLength    string          `json:"article_length"`
-	ContentMarkdown  string          `json:"content_markdown"`
-	Summary          string          `json:"summary"`
-	GenerationParams json.RawMessage `json:"generation_params"`
-	TargetWordCount  int             `json:"target_word_count"`
-	CoveredWordCount int             `json:"covered_word_count"`
-	CoverageRate     float64         `json:"coverage_rate"`
-	GenerationStatus string          `json:"generation_status"`
-	ModelName        string          `json:"model_name"`
-	PromptVersion    string          `json:"prompt_version"`
-	CreatedAt        string          `json:"created_at"`
+	ID                   uuid.UUID       `json:"id"`
+	Title                string          `json:"title"`
+	Topic                string          `json:"topic"`
+	Difficulty           string          `json:"difficulty"`
+	ArticleLength        string          `json:"article_length"`
+	ContentMarkdown      string          `json:"content_markdown"`
+	Summary              string          `json:"summary"`
+	GenerationParams     json.RawMessage `json:"generation_params"`
+	TargetWordCount      int             `json:"target_word_count"`
+	CoveredWordCount     int             `json:"covered_word_count"`
+	CoverageRate         float64         `json:"coverage_rate"`
+	GenerationStatus     string          `json:"generation_status"`
+	ModelName            string          `json:"model_name"`
+	PromptVersion        string          `json:"prompt_version"`
+	GenerationAttempts   int             `json:"generation_attempts"`
+	GenerationDurationMS int64           `json:"generation_duration_ms"`
+	InputTokens          int             `json:"input_tokens"`
+	OutputTokens         int             `json:"output_tokens"`
+	CreatedAt            string          `json:"created_at"`
 }
 
 type ArticleDetailResponse struct {
@@ -121,6 +176,58 @@ func (e APIError) Error() string { return e.Code + ": " + e.Message }
 
 var ErrAIGenerationUnavailable = errors.New("ai generation unavailable")
 
+func (s *Service) Preview(ctx context.Context, req PreviewRequest) (GenerationPreviewResponse, error) {
+	if err := validateTargetSelection(req.TargetWordCount, req.TargetWordIDs); err != nil {
+		return GenerationPreviewResponse{}, err
+	}
+	userID, err := localUserID()
+	if err != nil {
+		return GenerationPreviewResponse{}, err
+	}
+	selectedIDs, err := parseUUIDs(req.TargetWordIDs)
+	if err != nil {
+		return GenerationPreviewResponse{}, err
+	}
+	targets, err := s.repo.SelectTargetWords(ctx, userID, selectedIDs, req.TargetWordCount)
+	if err != nil {
+		return GenerationPreviewResponse{}, APIError{Status: 422, Code: "TARGET_WORDS_INVALID", Message: "selected target words are invalid or not owned by the local user"}
+	}
+
+	response := GenerationPreviewResponse{
+		Words: make([]GenerationPreviewWord, 0, len(targets)),
+		CountsByResponse: map[string]int{
+			"FORGET": 0, "VAGUE": 0, "FAMILIAR": 0, "WELL_FAMILIAR": 0,
+		},
+		IsAuto: len(selectedIDs) == 0,
+	}
+	for _, target := range targets {
+		response.Words = append(response.Words, GenerationPreviewWord{
+			ID:                    target.RecordID,
+			WordID:                target.WordID,
+			Spelling:              target.Spelling,
+			LastResponse:          target.LastResponse,
+			StudyCount:            target.StudyCount,
+			Tags:                  target.Tags,
+			MasteryScore:          target.MasteryScore,
+			WeakScore:             target.WeakScore,
+			NextStudyDate:         target.NextStudyDate,
+			RecommendationScore:   target.RecommendationScore,
+			RecommendationVersion: target.RecommendationVersion,
+			RecommendationReasons: target.RecommendationReasons,
+		})
+		response.CountsByResponse[target.LastResponse]++
+		if hasTargetTag(target.Tags, "STICKING") {
+			response.StickingCount++
+		}
+	}
+	manualCount := uniqueUUIDCount(selectedIDs)
+	if manualCount > len(targets) {
+		manualCount = len(targets)
+	}
+	response.AutoFillCount = len(targets) - manualCount
+	return response, nil
+}
+
 func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateResult, error) {
 	if s.ai == nil {
 		return GenerateResult{}, ErrAIGenerationUnavailable
@@ -150,16 +257,46 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateRe
 			Details: map[string]any{"available": len(targets), "target_word_count": normalized.TargetWordCount},
 		}
 	}
+	generationStarted := time.Now()
+	run, err := s.repo.StartGenerationRun(ctx, ArticleGenerationRun{
+		UserID:          userID,
+		Status:          "running",
+		Topic:           normalized.Topic,
+		Difficulty:      normalized.Difficulty,
+		ArticleLength:   normalized.ArticleLength,
+		TargetWordCount: len(targets),
+		PromptVersion:   promptVersionV1,
+	})
+	if err != nil {
+		return GenerateResult{}, err
+	}
 
 	aiReq := buildAIRequest(normalized, targets, nil)
 	var aiResp *ai.GenerateArticleResponse
 	var words []ArticleWordDraft
 	covered := 0
+	attemptCount := 0
+	inputTokens := 0
+	outputTokens := 0
+	modelName := ""
 	for attempt := 0; attempt < 3; attempt++ {
+		attemptCount++
 		aiResp, err = s.ai.GenerateArticle(ctx, aiReq)
 		if err != nil {
+			s.failGenerationRun(ctx, run.ID, GenerationRunMetrics{
+				Status:       "failed",
+				ModelName:    modelName,
+				AttemptCount: attemptCount,
+				InputTokens:  inputTokens,
+				OutputTokens: outputTokens,
+				DurationMS:   time.Since(generationStarted).Milliseconds(),
+				ErrorCode:    generationErrorCode(err),
+			})
 			return GenerateResult{}, err
 		}
+		inputTokens += aiResp.InputTokens
+		outputTokens += aiResp.OutputTokens
+		modelName = aiResp.ModelName
 		aiResp.ContentMarkdown = stripMarkdownEmphasis(aiResp.ContentMarkdown)
 		words, covered = locateCoverage(aiResp.ContentMarkdown, targets, aiResp.CoveredWords)
 		if coverageRate(covered, len(targets)) >= 0.9 || attempt == 2 {
@@ -173,24 +310,41 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateRe
 	if rate < 0.9 {
 		status = "low_coverage"
 	}
+	durationMS := time.Since(generationStarted).Milliseconds()
+	coverageDecimal := decimal.NewFromFloat(rate).Round(4)
 	detail, err := s.repo.SaveGeneratedArticle(ctx, ArticleDraft{
-		UserID:           userID,
-		Title:            strings.TrimSpace(aiResp.Title),
-		Topic:            normalized.Topic,
-		Difficulty:       normalized.Difficulty,
-		ArticleLength:    normalized.ArticleLength,
-		ContentMarkdown:  aiResp.ContentMarkdown,
-		Summary:          aiResp.Summary,
-		GenerationParams: buildGenerationParams(normalized, targets, len(selectedIDs) > 0),
-		TargetWordCount:  len(targets),
-		CoveredWordCount: covered,
-		CoverageRate:     decimal.NewFromFloat(rate).Round(4),
-		GenerationStatus: status,
-		ModelName:        aiResp.ModelName,
-		PromptVersion:    promptVersionV1,
-		Words:            words,
+		UserID:               userID,
+		Title:                strings.TrimSpace(aiResp.Title),
+		Topic:                normalized.Topic,
+		Difficulty:           normalized.Difficulty,
+		ArticleLength:        normalized.ArticleLength,
+		ContentMarkdown:      aiResp.ContentMarkdown,
+		Summary:              aiResp.Summary,
+		GenerationParams:     buildGenerationParams(normalized, targets, len(selectedIDs) > 0),
+		TargetWordCount:      len(targets),
+		CoveredWordCount:     covered,
+		CoverageRate:         coverageDecimal,
+		GenerationStatus:     status,
+		ModelName:            aiResp.ModelName,
+		PromptVersion:        promptVersionV1,
+		GenerationRunID:      run.ID,
+		GenerationAttempts:   attemptCount,
+		GenerationDurationMS: durationMS,
+		InputTokens:          inputTokens,
+		OutputTokens:         outputTokens,
+		Words:                words,
 	})
 	if err != nil {
+		s.failGenerationRun(ctx, run.ID, GenerationRunMetrics{
+			Status:       "failed",
+			ModelName:    modelName,
+			AttemptCount: attemptCount,
+			InputTokens:  inputTokens,
+			OutputTokens: outputTokens,
+			DurationMS:   durationMS,
+			CoverageRate: coverageDecimal,
+			ErrorCode:    "persistence_failed",
+		})
 		return GenerateResult{}, err
 	}
 	return GenerateResult{
@@ -200,6 +354,27 @@ func (s *Service) Generate(ctx context.Context, req GenerateRequest) (GenerateRe
 		TargetWordCount:  detail.Article.TargetWordCount,
 		CoverageRate:     rate,
 	}, nil
+}
+
+func (s *Service) failGenerationRun(ctx context.Context, runID uuid.UUID, metrics GenerationRunMetrics) {
+	_ = s.repo.FailGenerationRun(context.WithoutCancel(ctx), runID, metrics)
+}
+
+func generationErrorCode(err error) string {
+	switch {
+	case errors.Is(err, context.Canceled):
+		return "request_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "request_deadline_exceeded"
+	case errors.Is(err, ai.ErrAPIKeyMissing):
+		return "ai_api_key_missing"
+	case errors.Is(err, ai.ErrInvalidAIResponse):
+		return "ai_invalid_response"
+	case errors.Is(err, ai.ErrGenerationFailed):
+		return "ai_generation_failed"
+	default:
+		return "generation_failed"
+	}
 }
 
 func (s *Service) List(ctx context.Context, page, pageSize int) (PagedArticles, error) {
@@ -216,6 +391,46 @@ func (s *Service) List(ctx context.Context, page, pageSize int) (PagedArticles, 
 		return PagedArticles{}, err
 	}
 	return PagedArticles{Items: result.Items, Total: result.Total, Page: page, PageSize: pageSize}, nil
+}
+
+func (s *Service) ListGenerationRuns(ctx context.Context, limit int) ([]GenerationRunResponse, error) {
+	if limit == 0 {
+		limit = 20
+	}
+	if limit < 1 || limit > 100 {
+		return nil, APIError{Status: 400, Code: "INVALID_QUERY", Message: "limit must be between 1 and 100"}
+	}
+	userID, err := localUserID()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.repo.ListGenerationRuns(ctx, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]GenerationRunResponse, 0, len(rows))
+	for _, row := range rows {
+		coverage, _ := row.CoverageRate.Float64()
+		items = append(items, GenerationRunResponse{
+			ID:              row.ID,
+			ArticleID:       row.ArticleID,
+			Status:          row.Status,
+			Topic:           row.Topic,
+			Difficulty:      row.Difficulty,
+			ArticleLength:   row.ArticleLength,
+			TargetWordCount: row.TargetWordCount,
+			ModelName:       row.ModelName,
+			PromptVersion:   row.PromptVersion,
+			AttemptCount:    row.AttemptCount,
+			InputTokens:     row.InputTokens,
+			OutputTokens:    row.OutputTokens,
+			DurationMS:      row.DurationMS,
+			CoverageRate:    coverage,
+			ErrorCode:       row.ErrorCode,
+			CreatedAt:       row.CreatedAt,
+		})
+	}
+	return items, nil
 }
 
 func (s *Service) Get(ctx context.Context, id string) (ArticleDetailResponse, error) {
@@ -344,21 +559,25 @@ func mapArticleDetail(detail ArticleDetail) ArticleDetailResponse {
 	coverage, _ := detail.Article.CoverageRate.Float64()
 	return ArticleDetailResponse{
 		Article: ArticleResponse{
-			ID:               detail.Article.ID,
-			Title:            detail.Article.Title,
-			Topic:            detail.Article.Topic,
-			Difficulty:       detail.Article.Difficulty,
-			ArticleLength:    detail.Article.ArticleLength,
-			ContentMarkdown:  detail.Article.ContentMarkdown,
-			Summary:          detail.Article.Summary,
-			GenerationParams: json.RawMessage(detail.Article.GenerationParams),
-			TargetWordCount:  detail.Article.TargetWordCount,
-			CoveredWordCount: detail.Article.CoveredWordCount,
-			CoverageRate:     coverage,
-			GenerationStatus: detail.Article.GenerationStatus,
-			ModelName:        detail.Article.ModelName,
-			PromptVersion:    detail.Article.PromptVersion,
-			CreatedAt:        detail.Article.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ID:                   detail.Article.ID,
+			Title:                detail.Article.Title,
+			Topic:                detail.Article.Topic,
+			Difficulty:           detail.Article.Difficulty,
+			ArticleLength:        detail.Article.ArticleLength,
+			ContentMarkdown:      detail.Article.ContentMarkdown,
+			Summary:              detail.Article.Summary,
+			GenerationParams:     json.RawMessage(detail.Article.GenerationParams),
+			TargetWordCount:      detail.Article.TargetWordCount,
+			CoveredWordCount:     detail.Article.CoveredWordCount,
+			CoverageRate:         coverage,
+			GenerationStatus:     detail.Article.GenerationStatus,
+			ModelName:            detail.Article.ModelName,
+			PromptVersion:        detail.Article.PromptVersion,
+			GenerationAttempts:   detail.Article.GenerationAttempts,
+			GenerationDurationMS: detail.Article.GenerationDurationMS,
+			InputTokens:          detail.Article.InputTokens,
+			OutputTokens:         detail.Article.OutputTokens,
+			CreatedAt:            detail.Article.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		},
 		Words: detail.Words,
 	}
@@ -371,32 +590,52 @@ func validateGenerateRequest(req GenerateRequest) (GenerateRequest, error) {
 	if req.Topic == "" {
 		return GenerateRequest{}, APIError{Status: 422, Code: "TOPIC_REQUIRED", Message: "topic is required"}
 	}
+	if utf8.RuneCountInString(req.Topic) > 128 {
+		return GenerateRequest{}, APIError{Status: 422, Code: "TOPIC_TOO_LONG", Message: "topic must be 128 characters or fewer"}
+	}
 	if req.Difficulty == "" {
 		return GenerateRequest{}, APIError{Status: 422, Code: "DIFFICULTY_REQUIRED", Message: "difficulty is required"}
+	}
+	switch req.Difficulty {
+	case "A2", "B1", "B2", "B1-B2", "C1":
+	default:
+		return GenerateRequest{}, APIError{Status: 422, Code: "DIFFICULTY_INVALID", Message: "difficulty must be A2, B1, B2, B1-B2, or C1"}
 	}
 	if req.ArticleLength == "" {
 		req.ArticleLength = "medium"
 	}
-	if req.TargetWordCount > 80 || len(req.TargetWordIDs) > 80 {
-		return GenerateRequest{}, APIError{
+	switch req.ArticleLength {
+	case "short", "medium", "long":
+	default:
+		return GenerateRequest{}, APIError{Status: 422, Code: "ARTICLE_LENGTH_INVALID", Message: "article_length must be short, medium, or long"}
+	}
+	if err := validateTargetSelection(req.TargetWordCount, req.TargetWordIDs); err != nil {
+		return GenerateRequest{}, err
+	}
+	return req, nil
+}
+
+func validateTargetSelection(targetWordCount int, targetWordIDs []string) error {
+	if targetWordCount > 80 || len(targetWordIDs) > 80 {
+		return APIError{
 			Status:  422,
 			Code:    "TARGET_WORDS_TOO_MANY",
 			Message: "目标词数超过单篇上限 80。请拆分成多篇文章生成。",
-			Details: map[string]any{"selected": len(req.TargetWordIDs), "max_per_article": 80},
+			Details: map[string]any{"selected": len(targetWordIDs), "max_per_article": 80},
 		}
 	}
-	if req.TargetWordCount < 15 {
-		return GenerateRequest{}, APIError{Status: 422, Code: "TARGET_WORD_COUNT_TOO_SMALL", Message: "target_word_count must be at least 15"}
+	if targetWordCount < 15 {
+		return APIError{Status: 422, Code: "TARGET_WORD_COUNT_TOO_SMALL", Message: "target_word_count must be at least 15"}
 	}
-	if len(req.TargetWordIDs) > req.TargetWordCount {
-		return GenerateRequest{}, APIError{
+	if len(targetWordIDs) > targetWordCount {
+		return APIError{
 			Status:  422,
 			Code:    "TARGET_WORDS_EXCEED_COUNT",
-			Message: fmt.Sprintf("已勾选 %d 个词，超过目标词数 %d。请减少勾选或选择更长的文章长度。", len(req.TargetWordIDs), req.TargetWordCount),
-			Details: map[string]any{"selected": len(req.TargetWordIDs), "target_word_count": req.TargetWordCount, "suggested_length": "long"},
+			Message: fmt.Sprintf("已勾选 %d 个词，超过目标词数 %d。请减少勾选或选择更长的文章长度。", len(targetWordIDs), targetWordCount),
+			Details: map[string]any{"selected": len(targetWordIDs), "target_word_count": targetWordCount, "suggested_length": "long"},
 		}
 	}
-	return req, nil
+	return nil
 }
 
 func parseUUIDs(ids []string) ([]uuid.UUID, error) {
@@ -411,25 +650,53 @@ func parseUUIDs(ids []string) ([]uuid.UUID, error) {
 	return out, nil
 }
 
+func uniqueUUIDCount(ids []uuid.UUID) int {
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		seen[id] = struct{}{}
+	}
+	return len(seen)
+}
+
+func hasTargetTag(tags []string, target string) bool {
+	for _, tag := range tags {
+		if strings.EqualFold(strings.TrimSpace(tag), target) {
+			return true
+		}
+	}
+	return false
+}
+
 type generationParams struct {
-	Topic           string   `json:"topic"`
-	Difficulty      string   `json:"difficulty"`
-	ArticleLength   string   `json:"article_length"`
-	TargetWordCount int      `json:"target_word_count"`
-	TargetRecordIDs []string `json:"target_record_ids"`
-	TargetWordIDs   []string `json:"target_word_ids"`
-	SelectionMode   string   `json:"selection_mode"`
+	Topic                 string                         `json:"topic"`
+	Difficulty            string                         `json:"difficulty"`
+	ArticleLength         string                         `json:"article_length"`
+	TargetWordCount       int                            `json:"target_word_count"`
+	TargetRecordIDs       []string                       `json:"target_record_ids"`
+	TargetWordIDs         []string                       `json:"target_word_ids"`
+	SelectionMode         string                         `json:"selection_mode"`
+	SelectionVersion      string                         `json:"selection_version"`
+	TargetRecommendations []targetRecommendationSnapshot `json:"target_recommendations"`
+}
+
+type targetRecommendationSnapshot struct {
+	RecordID string         `json:"record_id"`
+	WordID   string         `json:"word_id"`
+	Score    int            `json:"score"`
+	Reasons  map[string]int `json:"reasons"`
 }
 
 func buildGenerationParams(req GenerateRequest, targets []TargetWordRecord, manual bool) datatypes.JSON {
 	params := generationParams{
-		Topic:           req.Topic,
-		Difficulty:      req.Difficulty,
-		ArticleLength:   req.ArticleLength,
-		TargetWordCount: len(targets),
-		TargetRecordIDs: make([]string, 0, len(targets)),
-		TargetWordIDs:   make([]string, 0, len(targets)),
-		SelectionMode:   "auto",
+		Topic:                 req.Topic,
+		Difficulty:            req.Difficulty,
+		ArticleLength:         req.ArticleLength,
+		TargetWordCount:       len(targets),
+		TargetRecordIDs:       make([]string, 0, len(targets)),
+		TargetWordIDs:         make([]string, 0, len(targets)),
+		SelectionMode:         "auto",
+		SelectionVersion:      vocabulary.RecommendationVersionV2,
+		TargetRecommendations: make([]targetRecommendationSnapshot, 0, len(targets)),
 	}
 	if manual {
 		params.SelectionMode = "manual"
@@ -437,6 +704,12 @@ func buildGenerationParams(req GenerateRequest, targets []TargetWordRecord, manu
 	for _, target := range targets {
 		params.TargetRecordIDs = append(params.TargetRecordIDs, target.RecordID.String())
 		params.TargetWordIDs = append(params.TargetWordIDs, target.WordID.String())
+		params.TargetRecommendations = append(params.TargetRecommendations, targetRecommendationSnapshot{
+			RecordID: target.RecordID.String(),
+			WordID:   target.WordID.String(),
+			Score:    target.RecommendationScore,
+			Reasons:  target.RecommendationReasons,
+		})
 	}
 	raw, err := json.Marshal(params)
 	if err != nil {

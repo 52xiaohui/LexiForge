@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +13,8 @@ import (
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"lexiforge/backend/internal/vocabulary"
 )
 
 // Repository owns the GORM access for articles + article_words.
@@ -23,34 +26,57 @@ type Repository struct {
 func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 
 type TargetWordRecord struct {
-	RecordID      uuid.UUID
-	WordID        uuid.UUID
-	Spelling      string
-	LastResponse  string
-	StudyCount    int
-	Tags          []string
-	WeakScore     int
-	MasteryScore  int
-	LastStudyDate *time.Time
-	NextStudyDate *time.Time
+	RecordID              uuid.UUID
+	WordID                uuid.UUID
+	Spelling              string
+	LastResponse          string
+	StudyCount            int
+	Tags                  []string
+	WeakScore             int
+	MasteryScore          int
+	LastStudyDate         *time.Time
+	NextStudyDate         *time.Time
+	Pinned                bool
+	LastRecognizedAt      *time.Time
+	LastFailedAt          *time.Time
+	LastExposedAt         *time.Time
+	RecommendationScore   int
+	RecommendationVersion string
+	RecommendationReasons map[string]int
 }
 
 type ArticleDraft struct {
-	UserID           uuid.UUID
-	Title            string
-	Topic            string
-	Difficulty       string
-	ArticleLength    string
-	ContentMarkdown  string
-	Summary          string
-	GenerationParams datatypes.JSON
-	TargetWordCount  int
-	CoveredWordCount int
-	CoverageRate     decimal.Decimal
-	GenerationStatus string
-	ModelName        string
-	PromptVersion    string
-	Words            []ArticleWordDraft
+	UserID               uuid.UUID
+	Title                string
+	Topic                string
+	Difficulty           string
+	ArticleLength        string
+	ContentMarkdown      string
+	Summary              string
+	GenerationParams     datatypes.JSON
+	TargetWordCount      int
+	CoveredWordCount     int
+	CoverageRate         decimal.Decimal
+	GenerationStatus     string
+	ModelName            string
+	PromptVersion        string
+	GenerationRunID      uuid.UUID
+	GenerationAttempts   int
+	GenerationDurationMS int64
+	InputTokens          int
+	OutputTokens         int
+	Words                []ArticleWordDraft
+}
+
+type GenerationRunMetrics struct {
+	Status       string
+	ModelName    string
+	AttemptCount int
+	InputTokens  int
+	OutputTokens int
+	DurationMS   int64
+	CoverageRate decimal.Decimal
+	ErrorCode    string
 }
 
 type ArticleWordDraft struct {
@@ -106,7 +132,7 @@ func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, se
 	seenWords := map[uuid.UUID]struct{}{}
 
 	if len(selectedIDs) > 0 {
-		rows, err := r.findTargetWords(ctx, userID, "sr.id IN ?", []any{selectedIDs}, len(selectedIDs), false)
+		rows, err := r.findTargetWords(ctx, userID, "sr.id IN ?", []any{selectedIDs}, false)
 		if err != nil {
 			return nil, err
 		}
@@ -127,66 +153,94 @@ func (r *Repository) SelectTargetWords(ctx context.Context, userID uuid.UUID, se
 		}
 	}
 
-	targets := selected
-	remaining := targetCount - len(targets)
-	if remaining <= 0 {
+	targets := append([]TargetWordRecord(nil), selected...)
+	if len(targets) >= targetCount {
 		return targets, nil
 	}
 
-	plans := []struct {
-		where string
-		args  []any
-		limit int
-	}{
-		{where: "(sr.weak_score >= ? OR sr.mastery_score < ?)", args: []any{autoPickMinWeakScore, autoPickMaxMastery}, limit: quota(targetCount, 70) - len(targets)},
-		{where: "sr.mastery_score BETWEEN ? AND ?", args: []any{45, 80}, limit: quota(targetCount, 20)},
-		{where: "sr.last_study_date IS NOT NULL", limit: targetCount},
-		{where: "1 = 1", limit: targetCount},
+	candidates, err := r.findTargetWords(ctx, userID, "1 = 1", nil, true)
+	if err != nil {
+		return nil, err
 	}
-	for _, plan := range plans {
-		if len(targets) >= targetCount {
-			break
-		}
-		limit := plan.limit
+	sortTargetWords(candidates)
+
+	appendPlan := func(limit int, matches func(TargetWordRecord) bool) {
 		if limit <= 0 {
-			limit = targetCount - len(targets)
+			return
 		}
-		rows, err := r.findTargetWords(ctx, userID, plan.where, plan.args, limit+len(seenWords), true)
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range rows {
-			if len(targets) >= targetCount {
+		added := 0
+		for _, row := range candidates {
+			if len(targets) >= targetCount || added >= limit {
 				break
 			}
 			if _, exists := seenWords[row.WordID]; exists {
 				continue
 			}
+			if !matches(row) {
+				continue
+			}
 			targets = append(targets, row)
 			seenWords[row.WordID] = struct{}{}
+			added++
 		}
 	}
+
+	appendPlan(quota(targetCount, 70)-len(selected), isPriorityTarget)
+	appendPlan(quota(targetCount, 20), func(row TargetWordRecord) bool {
+		return row.MasteryScore >= 45 && row.MasteryScore <= 80
+	})
+	appendPlan(targetCount-len(targets), func(row TargetWordRecord) bool {
+		return row.LastStudyDate != nil
+	})
+	appendPlan(targetCount-len(targets), func(TargetWordRecord) bool { return true })
 	return targets, nil
+}
+
+func (r *Repository) StartGenerationRun(ctx context.Context, run ArticleGenerationRun) (ArticleGenerationRun, error) {
+	if err := r.db.WithContext(ctx).Create(&run).Error; err != nil {
+		return ArticleGenerationRun{}, err
+	}
+	return run, nil
+}
+
+func (r *Repository) FailGenerationRun(ctx context.Context, runID uuid.UUID, metrics GenerationRunMetrics) error {
+	return r.db.WithContext(ctx).Model(&ArticleGenerationRun{}).
+		Where("id = ?", runID).
+		Updates(generationRunUpdates(nil, metrics)).Error
+}
+
+func (r *Repository) ListGenerationRuns(ctx context.Context, userID uuid.UUID, limit int) ([]ArticleGenerationRun, error) {
+	var rows []ArticleGenerationRun
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&rows).Error
+	return rows, err
 }
 
 func (r *Repository) SaveGeneratedArticle(ctx context.Context, draft ArticleDraft) (ArticleDetail, error) {
 	var detail ArticleDetail
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := Article{
-			UserID:           draft.UserID,
-			Title:            draft.Title,
-			Topic:            draft.Topic,
-			Difficulty:       draft.Difficulty,
-			ArticleLength:    draft.ArticleLength,
-			ContentMarkdown:  draft.ContentMarkdown,
-			Summary:          draft.Summary,
-			GenerationParams: draft.GenerationParams,
-			TargetWordCount:  draft.TargetWordCount,
-			CoveredWordCount: draft.CoveredWordCount,
-			CoverageRate:     draft.CoverageRate,
-			GenerationStatus: draft.GenerationStatus,
-			ModelName:        draft.ModelName,
-			PromptVersion:    draft.PromptVersion,
+			UserID:               draft.UserID,
+			Title:                draft.Title,
+			Topic:                draft.Topic,
+			Difficulty:           draft.Difficulty,
+			ArticleLength:        draft.ArticleLength,
+			ContentMarkdown:      draft.ContentMarkdown,
+			Summary:              draft.Summary,
+			GenerationParams:     draft.GenerationParams,
+			TargetWordCount:      draft.TargetWordCount,
+			CoveredWordCount:     draft.CoveredWordCount,
+			CoverageRate:         draft.CoverageRate,
+			GenerationStatus:     draft.GenerationStatus,
+			ModelName:            draft.ModelName,
+			PromptVersion:        draft.PromptVersion,
+			GenerationAttempts:   draft.GenerationAttempts,
+			GenerationDurationMS: draft.GenerationDurationMS,
+			InputTokens:          draft.InputTokens,
+			OutputTokens:         draft.OutputTokens,
 		}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
@@ -211,10 +265,46 @@ func (r *Repository) SaveGeneratedArticle(ctx context.Context, draft ArticleDraf
 				return err
 			}
 		}
+		if draft.GenerationRunID != uuid.Nil {
+			articleID := row.ID
+			metrics := GenerationRunMetrics{
+				Status:       draft.GenerationStatus,
+				ModelName:    draft.ModelName,
+				AttemptCount: draft.GenerationAttempts,
+				InputTokens:  draft.InputTokens,
+				OutputTokens: draft.OutputTokens,
+				DurationMS:   draft.GenerationDurationMS,
+				CoverageRate: draft.CoverageRate,
+			}
+			result := tx.Model(&ArticleGenerationRun{}).
+				Where("id = ? AND user_id = ?", draft.GenerationRunID, draft.UserID).
+				Updates(generationRunUpdates(&articleID, metrics))
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf("generation run %s not found", draft.GenerationRunID)
+			}
+		}
 		detail = ArticleDetail{Article: row, Words: words}
 		return nil
 	})
 	return detail, err
+}
+
+func generationRunUpdates(articleID *uuid.UUID, metrics GenerationRunMetrics) map[string]any {
+	return map[string]any{
+		"article_id":    articleID,
+		"status":        metrics.Status,
+		"model_name":    metrics.ModelName,
+		"attempt_count": metrics.AttemptCount,
+		"input_tokens":  metrics.InputTokens,
+		"output_tokens": metrics.OutputTokens,
+		"duration_ms":   metrics.DurationMS,
+		"coverage_rate": metrics.CoverageRate,
+		"error_code":    metrics.ErrorCode,
+		"updated_at":    time.Now(),
+	}
 }
 
 func (r *Repository) ListArticles(ctx context.Context, userID uuid.UUID, page, pageSize int) (ArticleListResult, error) {
@@ -352,34 +442,42 @@ func insertArticleExposureEvents(db *gorm.DB, userID, articleID uuid.UUID) error
 	`, userID, eventExposedInArticle, articleID, userID, eventExposedInArticle).Error
 }
 
-func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, where string, args []any, limit int, excludeIgnored bool) ([]TargetWordRecord, error) {
+func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, where string, args []any, excludeIgnored bool) ([]TargetWordRecord, error) {
 	var rows []struct {
-		RecordID      uuid.UUID      `gorm:"column:record_id"`
-		WordID        uuid.UUID      `gorm:"column:word_id"`
-		Spelling      string         `gorm:"column:spelling"`
-		LastResponse  string         `gorm:"column:last_response"`
-		StudyCount    int            `gorm:"column:study_count"`
-		Tags          datatypes.JSON `gorm:"column:tags"`
-		WeakScore     int            `gorm:"column:weak_score"`
-		MasteryScore  int            `gorm:"column:mastery_score"`
-		LastStudyDate *time.Time     `gorm:"column:last_study_date"`
-		NextStudyDate *time.Time     `gorm:"column:next_study_date"`
+		RecordID         uuid.UUID      `gorm:"column:record_id"`
+		WordID           uuid.UUID      `gorm:"column:word_id"`
+		Spelling         string         `gorm:"column:spelling"`
+		LastResponse     string         `gorm:"column:last_response"`
+		StudyCount       int            `gorm:"column:study_count"`
+		Tags             datatypes.JSON `gorm:"column:tags"`
+		WeakScore        int            `gorm:"column:weak_score"`
+		MasteryScore     int            `gorm:"column:mastery_score"`
+		LastStudyDate    *time.Time     `gorm:"column:last_study_date"`
+		NextStudyDate    *time.Time     `gorm:"column:next_study_date"`
+		Pinned           bool           `gorm:"column:pinned"`
+		LastRecognizedAt *time.Time     `gorm:"column:last_recognized_at"`
+		LastFailedAt     *time.Time     `gorm:"column:last_failed_at"`
+		LastExposedAt    *time.Time     `gorm:"column:last_exposed_at"`
 	}
 	query := r.db.WithContext(ctx).Table("study_records AS sr").
 		Select(`sr.id AS record_id, sr.word_id, vw.spelling, sr.last_response, sr.study_count,
-			sr.tags, sr.weak_score, sr.mastery_score, sr.last_study_date, sr.next_study_date`).
+			sr.tags, sr.weak_score, sr.mastery_score, sr.last_study_date, sr.next_study_date,
+			COALESCE(uwp.pinned, false) AS pinned,
+			signals.last_recognized_at, signals.last_failed_at, signals.last_exposed_at`).
 		Joins("JOIN vocab_words AS vw ON vw.id = sr.word_id").
+		Joins("LEFT JOIN user_word_preferences AS uwp ON uwp.user_id = sr.user_id AND uwp.word_id = sr.word_id").
+		Joins(`LEFT JOIN LATERAL (
+			SELECT
+				MAX(created_at) FILTER (WHERE event_type = 'recognized_in_context') AS last_recognized_at,
+				MAX(created_at) FILTER (WHERE event_type = 'failed_in_context') AS last_failed_at,
+				MAX(created_at) FILTER (WHERE event_type = 'exposed_in_article') AS last_exposed_at
+			FROM word_learning_events
+			WHERE user_id = sr.user_id AND word_id = sr.word_id
+		) AS signals ON true`).
 		Where("sr.user_id = ?", userID).
-		Where(where, args...).
-		Order("sr.weak_score DESC, sr.study_count DESC, sr.last_study_date DESC NULLS LAST, vw.spelling ASC").
-		Limit(limit)
+		Where(where, args...)
 	if excludeIgnored {
-		query = query.Where(`NOT EXISTS (
-			SELECT 1 FROM user_word_preferences AS uwp
-			WHERE uwp.user_id = sr.user_id
-				AND uwp.word_id = sr.word_id
-				AND uwp.ignored = true
-		)`)
+		query = query.Where("NOT (COALESCE(uwp.ignored, false) = true AND (uwp.ignored_until IS NULL OR uwp.ignored_until > NOW()))")
 		query = query.Where(`NOT EXISTS (
 			SELECT 1 FROM word_learning_events AS wle
 			WHERE wle.user_id = sr.user_id
@@ -397,19 +495,65 @@ func (r *Repository) findTargetWords(ctx context.Context, userID uuid.UUID, wher
 			return nil, err
 		}
 		out = append(out, TargetWordRecord{
-			RecordID:      row.RecordID,
-			WordID:        row.WordID,
-			Spelling:      row.Spelling,
-			LastResponse:  row.LastResponse,
-			StudyCount:    row.StudyCount,
-			Tags:          tags,
-			WeakScore:     row.WeakScore,
-			MasteryScore:  row.MasteryScore,
-			LastStudyDate: row.LastStudyDate,
-			NextStudyDate: row.NextStudyDate,
+			RecordID:         row.RecordID,
+			WordID:           row.WordID,
+			Spelling:         row.Spelling,
+			LastResponse:     row.LastResponse,
+			StudyCount:       row.StudyCount,
+			Tags:             tags,
+			WeakScore:        row.WeakScore,
+			MasteryScore:     row.MasteryScore,
+			LastStudyDate:    row.LastStudyDate,
+			NextStudyDate:    row.NextStudyDate,
+			Pinned:           row.Pinned,
+			LastRecognizedAt: row.LastRecognizedAt,
+			LastFailedAt:     row.LastFailedAt,
+			LastExposedAt:    row.LastExposedAt,
 		})
 	}
+	now := time.Now()
+	for i := range out {
+		recommendation := vocabulary.CalculateRecommendation(vocabulary.RecommendationInput{
+			WeakScore:        out[i].WeakScore,
+			Pinned:           out[i].Pinned,
+			LastRecognizedAt: out[i].LastRecognizedAt,
+			LastFailedAt:     out[i].LastFailedAt,
+			LastExposedAt:    out[i].LastExposedAt,
+		}, now)
+		out[i].RecommendationScore = recommendation.Score
+		out[i].RecommendationVersion = recommendation.Version
+		out[i].RecommendationReasons = recommendation.Reasons
+	}
 	return out, nil
+}
+
+func sortTargetWords(rows []TargetWordRecord) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		left, right := rows[i], rows[j]
+		if left.RecommendationScore != right.RecommendationScore {
+			return left.RecommendationScore > right.RecommendationScore
+		}
+		if left.WeakScore != right.WeakScore {
+			return left.WeakScore > right.WeakScore
+		}
+		if left.StudyCount != right.StudyCount {
+			return left.StudyCount > right.StudyCount
+		}
+		if left.LastStudyDate == nil || right.LastStudyDate == nil {
+			return left.LastStudyDate != nil
+		}
+		if !left.LastStudyDate.Equal(*right.LastStudyDate) {
+			return left.LastStudyDate.After(*right.LastStudyDate)
+		}
+		return left.Spelling < right.Spelling
+	})
+}
+
+func isPriorityTarget(row TargetWordRecord) bool {
+	return row.WeakScore >= autoPickMinWeakScore ||
+		row.MasteryScore < autoPickMaxMastery ||
+		row.Pinned ||
+		vocabulary.LatestFeedbackIsFailure(row.LastRecognizedAt, row.LastFailedAt)
 }
 
 func decodeTags(raw datatypes.JSON) ([]string, error) {

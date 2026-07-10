@@ -167,11 +167,12 @@ func (r *Repository) Summary(userID uuid.UUID) (Summary, error) {
 		return Summary{}, err
 	}
 	activePreferenceSQL := `NOT EXISTS (
-		SELECT 1 FROM user_word_preferences AS uwp
-		WHERE uwp.user_id = study_records.user_id
-			AND uwp.word_id = study_records.word_id
-			AND uwp.ignored = true
-	)`
+			SELECT 1 FROM user_word_preferences AS uwp
+			WHERE uwp.user_id = study_records.user_id
+				AND uwp.word_id = study_records.word_id
+				AND uwp.ignored = true
+				AND (uwp.ignored_until IS NULL OR uwp.ignored_until > NOW())
+		)`
 	notManuallyMasteredSQL := `NOT EXISTS (
 		SELECT 1 FROM word_learning_events AS wle
 		WHERE wle.user_id = study_records.user_id
@@ -278,7 +279,7 @@ func (r *Repository) recordsBaseQuery(opts ListOptions) *gorm.DB {
 		query = query.Where("(sr.weak_score >= ? OR sr.mastery_score < ?)", weakListMinWeakScore, weakListMaxMastery)
 	}
 	if opts.WeakOnly {
-		query = query.Where("COALESCE(uwp.ignored, false) = false")
+		query = query.Where("NOT (COALESCE(uwp.ignored, false) = true AND (uwp.ignored_until IS NULL OR uwp.ignored_until > NOW()))")
 		query = query.Where(`NOT EXISTS (
 			SELECT 1 FROM word_learning_events AS wle
 			WHERE wle.user_id = sr.user_id
@@ -295,7 +296,8 @@ func recordSelectColumns() string {
 		sr.last_response, sr.study_count, sr.tags, sr.add_date,
 		sr.first_study_date, sr.last_study_date, sr.next_study_date,
 		sr.mastery_score, sr.weak_score, sr.score_version, sr.score_reasons,
-		COALESCE(uwp.ignored, false) AS ignored, uwp.ignored_reason, uwp.ignored_until,
+			(COALESCE(uwp.ignored, false) = true AND (uwp.ignored_until IS NULL OR uwp.ignored_until > NOW())) AS ignored,
+			uwp.ignored_reason, uwp.ignored_until,
 		COALESCE(uwp.pinned, false) AS pinned,
 		COALESCE((
 			SELECT wle.event_type

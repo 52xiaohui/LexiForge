@@ -3,12 +3,14 @@ package article
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"lexiforge/backend/internal/ai"
+	"lexiforge/backend/internal/vocabulary"
 )
 
 type fakeArticleRepo struct {
@@ -19,6 +21,8 @@ type fakeArticleRepo struct {
 	progress       UserArticleProgress
 	hasProgress    bool
 	exposureWrites int
+	generationRuns []ArticleGenerationRun
+	failedMetrics  GenerationRunMetrics
 }
 
 func (f *fakeArticleRepo) SelectTargetWords(_ context.Context, _ uuid.UUID, selectedIDs []uuid.UUID, _ int) ([]TargetWordRecord, error) {
@@ -29,18 +33,37 @@ func (f *fakeArticleRepo) SelectTargetWords(_ context.Context, _ uuid.UUID, sele
 func (f *fakeArticleRepo) SaveGeneratedArticle(_ context.Context, draft ArticleDraft) (ArticleDetail, error) {
 	f.saved = draft
 	row := Article{
-		ID:               uuid.New(),
-		UserID:           draft.UserID,
-		Title:            draft.Title,
-		Topic:            draft.Topic,
-		Difficulty:       draft.Difficulty,
-		ArticleLength:    draft.ArticleLength,
-		GenerationParams: draft.GenerationParams,
-		TargetWordCount:  draft.TargetWordCount,
-		CoveredWordCount: draft.CoveredWordCount,
-		GenerationStatus: draft.GenerationStatus,
+		ID:                   uuid.New(),
+		UserID:               draft.UserID,
+		Title:                draft.Title,
+		Topic:                draft.Topic,
+		Difficulty:           draft.Difficulty,
+		ArticleLength:        draft.ArticleLength,
+		GenerationParams:     draft.GenerationParams,
+		TargetWordCount:      draft.TargetWordCount,
+		CoveredWordCount:     draft.CoveredWordCount,
+		GenerationStatus:     draft.GenerationStatus,
+		GenerationAttempts:   draft.GenerationAttempts,
+		GenerationDurationMS: draft.GenerationDurationMS,
+		InputTokens:          draft.InputTokens,
+		OutputTokens:         draft.OutputTokens,
 	}
 	return ArticleDetail{Article: row}, nil
+}
+
+func (f *fakeArticleRepo) StartGenerationRun(_ context.Context, run ArticleGenerationRun) (ArticleGenerationRun, error) {
+	run.ID = uuid.New()
+	f.generationRuns = append(f.generationRuns, run)
+	return run, nil
+}
+
+func (f *fakeArticleRepo) FailGenerationRun(_ context.Context, _ uuid.UUID, metrics GenerationRunMetrics) error {
+	f.failedMetrics = metrics
+	return nil
+}
+
+func (f *fakeArticleRepo) ListGenerationRuns(context.Context, uuid.UUID, int) ([]ArticleGenerationRun, error) {
+	return f.generationRuns, nil
 }
 
 func (f *fakeArticleRepo) ListArticles(context.Context, uuid.UUID, int, int) (ArticleListResult, error) {
@@ -73,11 +96,15 @@ type fakeAIClient struct {
 	calls    int
 	requests []ai.GenerateArticleRequest
 	resps    []*ai.GenerateArticleResponse
+	errs     []error
 }
 
 func (f *fakeAIClient) GenerateArticle(_ context.Context, req ai.GenerateArticleRequest) (*ai.GenerateArticleResponse, error) {
 	f.calls++
 	f.requests = append(f.requests, req)
+	if len(f.errs) >= f.calls && f.errs[f.calls-1] != nil {
+		return nil, f.errs[f.calls-1]
+	}
 	return f.resps[f.calls-1], nil
 }
 
@@ -89,8 +116,8 @@ func TestGenerateRetriesLowCoverageAndSavesAllTargetWords(t *testing.T) {
 	secondClaims := claimsForTargets(targets, secondContent)
 	repo := &fakeArticleRepo{targets: targets}
 	aiClient := &fakeAIClient{resps: []*ai.GenerateArticleResponse{
-		{Title: "First", ContentMarkdown: firstContent, CoveredWords: firstClaims, MissingWords: []string{"word1"}},
-		{Title: "Second", ContentMarkdown: secondContent, CoveredWords: secondClaims, MissingWords: []string{}},
+		{Title: "First", ContentMarkdown: firstContent, CoveredWords: firstClaims, MissingWords: []string{"word1"}, ModelName: "test-model", InputTokens: 10, OutputTokens: 20},
+		{Title: "Second", ContentMarkdown: secondContent, CoveredWords: secondClaims, MissingWords: []string{}, ModelName: "test-model", InputTokens: 3, OutputTokens: 4},
 	}}
 	svc := NewService(repo, aiClient)
 
@@ -125,6 +152,49 @@ func TestGenerateRetriesLowCoverageAndSavesAllTargetWords(t *testing.T) {
 	}
 	if params.TargetWordCount != 15 || len(params.TargetRecordIDs) != 15 || len(params.TargetWordIDs) != 15 {
 		t.Fatalf("generation params target snapshot = %#v, want 15 final targets", params)
+	}
+	if params.SelectionVersion != vocabulary.RecommendationVersionV2 || len(params.TargetRecommendations) != 15 {
+		t.Fatalf("selection snapshot = %#v, want recommendation v2 with 15 targets", params)
+	}
+	if repo.saved.GenerationAttempts != 2 || repo.saved.InputTokens != 13 || repo.saved.OutputTokens != 24 {
+		t.Fatalf("generation metrics = attempts %d tokens %d/%d, want 2 and 13/24", repo.saved.GenerationAttempts, repo.saved.InputTokens, repo.saved.OutputTokens)
+	}
+}
+
+func TestPreviewReturnsExactRepositorySelectionAndRecommendationReasons(t *testing.T) {
+	targets := makeTargets(15)
+	targets[0].RecommendationScore = 145
+	targets[0].RecommendationVersion = vocabulary.RecommendationVersionV2
+	targets[0].RecommendationReasons = map[string]int{"failed_in_context": 35}
+	repo := &fakeArticleRepo{targets: targets}
+	svc := NewService(repo, &fakeAIClient{})
+
+	got, err := svc.Preview(context.Background(), PreviewRequest{TargetWordCount: 15})
+	if err != nil {
+		t.Fatalf("Preview returned error: %v", err)
+	}
+	if len(got.Words) != 15 || !got.IsAuto || got.AutoFillCount != 15 {
+		t.Fatalf("preview = %#v, want 15 auto-selected words", got)
+	}
+	if got.Words[0].RecommendationScore != 145 || got.Words[0].RecommendationReasons["failed_in_context"] != 35 {
+		t.Fatalf("first preview word = %#v, want recommendation explanation", got.Words[0])
+	}
+}
+
+func TestGenerateRecordsAIFailureMetrics(t *testing.T) {
+	targets := makeTargets(15)
+	repo := &fakeArticleRepo{targets: targets}
+	aiClient := &fakeAIClient{errs: []error{ai.ErrGenerationFailed}}
+	svc := NewService(repo, aiClient)
+
+	_, err := svc.Generate(context.Background(), GenerateRequest{
+		Topic: "campus life", Difficulty: "B1", ArticleLength: "short", TargetWordCount: 15,
+	})
+	if !errors.Is(err, ai.ErrGenerationFailed) {
+		t.Fatalf("Generate error = %v, want ai generation failure", err)
+	}
+	if repo.failedMetrics.Status != "failed" || repo.failedMetrics.AttemptCount != 1 || repo.failedMetrics.ErrorCode != "ai_generation_failed" {
+		t.Fatalf("failure metrics = %#v, want classified first-attempt failure", repo.failedMetrics)
 	}
 }
 
@@ -335,6 +405,17 @@ func TestValidateGenerateRequestTargetWordsExceedCount(t *testing.T) {
 	}
 	if apiErr.Code != "TARGET_WORDS_EXCEED_COUNT" {
 		t.Fatalf("code = %s, want TARGET_WORDS_EXCEED_COUNT", apiErr.Code)
+	}
+}
+
+func TestValidateGenerateRequestRejectsUnsupportedDifficultyAndLength(t *testing.T) {
+	for _, request := range []GenerateRequest{
+		{Topic: "topic", Difficulty: "expert", ArticleLength: "short", TargetWordCount: 15},
+		{Topic: "topic", Difficulty: "B1", ArticleLength: "novel", TargetWordCount: 15},
+	} {
+		if _, err := validateGenerateRequest(request); err == nil {
+			t.Fatalf("validateGenerateRequest(%#v) returned nil error", request)
+		}
 	}
 }
 

@@ -24,7 +24,9 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // Register attaches MVP article routes to the given /api/v1 group.
 func (h *Handler) Register(rg *gin.RouterGroup) {
 	g := rg.Group("/articles")
+	g.POST("/preview", h.Preview)
 	g.POST("/generate", h.Generate)
+	g.GET("/generation-runs", h.ListGenerationRuns)
 	g.GET("", h.List)
 	g.GET("/:id/progress", h.GetProgress)
 	g.PUT("/:id/progress", h.UpdateProgress)
@@ -32,6 +34,16 @@ func (h *Handler) Register(rg *gin.RouterGroup) {
 	g.DELETE("/:id", h.Delete)
 	g.POST("/:id/regenerate", h.Regenerate)
 	g.GET("/:id/export.md", h.ExportMarkdown)
+}
+
+func (h *Handler) Preview(c *gin.Context) {
+	var req PreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Respond(c, http.StatusBadRequest, "INVALID_JSON", "request body must be valid JSON", nil)
+		return
+	}
+	result, err := h.svc.Preview(c.Request.Context(), req)
+	respond(c, result, err)
 }
 
 func (h *Handler) Generate(c *gin.Context) {
@@ -54,6 +66,15 @@ func (h *Handler) List(c *gin.Context) {
 		return
 	}
 	result, err := h.svc.List(c.Request.Context(), page, pageSize)
+	respond(c, result, err)
+}
+
+func (h *Handler) ListGenerationRuns(c *gin.Context) {
+	limit, ok := parseIntQuery(c, "limit", 20)
+	if !ok {
+		return
+	}
+	result, err := h.svc.ListGenerationRuns(c.Request.Context(), limit)
 	respond(c, result, err)
 }
 
