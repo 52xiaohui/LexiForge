@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -23,7 +24,10 @@ type Config struct {
 	DatabaseURL string
 	LogLevel    string // debug | info | warn | error
 
-	CORSAllowedOrigins []string
+	CORSAllowedOrigins  []string
+	AppAccessToken      string
+	AIRateLimitPerMin   int
+	SyncRateLimitPerMin int
 
 	// Pass-through secrets: empty until filled by env or .env.
 	MaimemoToken  string
@@ -66,14 +70,27 @@ func loadFromValues(values map[string]string) (Config, error) {
 		DatabaseURL:        envValue(values, "DATABASE_URL", "postgres://lexiforge:lexiforge@localhost:5432/lexiforge?sslmode=disable"),
 		LogLevel:           envValue(values, "LOG_LEVEL", "info"),
 		CORSAllowedOrigins: parseCSVList(values["CORS_ALLOWED_ORIGINS"]),
+		AppAccessToken:     strings.TrimSpace(values["APP_ACCESS_TOKEN"]),
 		MaimemoToken:       values["MAIMEMO_TOKEN"],
 		OpenAIAPIKey:       values["OPENAI_API_KEY"],
 		OpenAIBaseURL:      envValue(values, "OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:        envValue(values, "OPENAI_MODEL", "gpt-4o-mini"),
 	}
+	var err error
+	c.AIRateLimitPerMin, err = positiveIntValue(values, "AI_RATE_LIMIT_PER_MINUTE", 5)
+	if err != nil {
+		return Config{}, err
+	}
+	c.SyncRateLimitPerMin, err = positiveIntValue(values, "SYNC_RATE_LIMIT_PER_MINUTE", 2)
+	if err != nil {
+		return Config{}, err
+	}
 
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	if c.IsProduction() && len(c.AppAccessToken) < 32 {
+		return Config{}, fmt.Errorf("APP_ACCESS_TOKEN must contain at least 32 characters in production")
 	}
 	if !strings.HasPrefix(c.AppPort, ":") {
 		c.AppPort = ":" + c.AppPort
@@ -108,6 +125,9 @@ func readProcessEnv() map[string]string {
 		"DATABASE_URL",
 		"LOG_LEVEL",
 		"CORS_ALLOWED_ORIGINS",
+		"APP_ACCESS_TOKEN",
+		"AI_RATE_LIMIT_PER_MINUTE",
+		"SYNC_RATE_LIMIT_PER_MINUTE",
 		"MAIMEMO_TOKEN",
 		"OPENAI_API_KEY",
 		"OPENAI_BASE_URL",
@@ -118,6 +138,18 @@ func readProcessEnv() map[string]string {
 		}
 	}
 	return values
+}
+
+func positiveIntValue(values map[string]string, key string, fallback int) (int, error) {
+	raw := strings.TrimSpace(values[key])
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return value, nil
 }
 
 func parseCSVList(value string) []string {

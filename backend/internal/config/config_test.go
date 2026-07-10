@@ -17,6 +17,9 @@ OPENAI_API_KEY=openai-key
 OPENAI_BASE_URL="http://ai.test/v1"
 OPENAI_MODEL='gpt-test'
 CORS_ALLOWED_ORIGINS=https://app.example.com, https://preview.example.com/
+APP_ACCESS_TOKEN=0123456789abcdef0123456789abcdef
+AI_RATE_LIMIT_PER_MINUTE=7
+SYNC_RATE_LIMIT_PER_MINUTE=3
 `)
 
 	cfg, err := loadFromFile(path)
@@ -51,6 +54,12 @@ CORS_ALLOWED_ORIGINS=https://app.example.com, https://preview.example.com/
 		"https://app.example.com",
 		"https://preview.example.com",
 	})
+	if cfg.AppAccessToken != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("AppAccessToken was not loaded")
+	}
+	if cfg.AIRateLimitPerMin != 7 || cfg.SyncRateLimitPerMin != 3 {
+		t.Fatalf("rate limits = %d/%d, want 7/3", cfg.AIRateLimitPerMin, cfg.SyncRateLimitPerMin)
+	}
 }
 
 func TestLoadFromFileIgnoresProcessEnvironment(t *testing.T) {
@@ -94,6 +103,9 @@ func TestLoadFromFileAppliesDefaults(t *testing.T) {
 	if cfg.OpenAIModel != "gpt-4o-mini" {
 		t.Fatalf("OpenAIModel = %q, want default", cfg.OpenAIModel)
 	}
+	if cfg.AIRateLimitPerMin != 5 || cfg.SyncRateLimitPerMin != 2 {
+		t.Fatalf("default rate limits = %d/%d, want 5/2", cfg.AIRateLimitPerMin, cfg.SyncRateLimitPerMin)
+	}
 }
 
 func TestLoadFindsProjectRootDotEnv(t *testing.T) {
@@ -124,6 +136,7 @@ func TestLoadUsesProcessEnvironmentWithoutDotEnv(t *testing.T) {
 	t.Setenv("APP_PORT", "6060")
 	t.Setenv("DATABASE_URL", "postgres://env-only")
 	t.Setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com, https://api.example.com/")
+	t.Setenv("APP_ACCESS_TOKEN", "0123456789abcdef0123456789abcdef")
 
 	cfg, err := Load()
 	if err != nil {
@@ -142,6 +155,25 @@ func TestLoadUsesProcessEnvironmentWithoutDotEnv(t *testing.T) {
 		"https://app.example.com",
 		"https://api.example.com",
 	})
+}
+
+func TestProductionRequiresStrongAccessToken(t *testing.T) {
+	_, err := loadFromFile(writeEnvFile(t, `
+APP_ENV=production
+DATABASE_URL=postgres://production
+`))
+	if err == nil {
+		t.Fatalf("loadFromFile returned nil error, want production access-token validation")
+	}
+}
+
+func TestRateLimitMustBePositiveInteger(t *testing.T) {
+	_, err := loadFromFile(writeEnvFile(t, `
+AI_RATE_LIMIT_PER_MINUTE=0
+`))
+	if err == nil {
+		t.Fatalf("loadFromFile returned nil error, want invalid rate-limit validation")
+	}
 }
 
 func TestLoadProcessEnvironmentOverridesDotEnv(t *testing.T) {
@@ -222,6 +254,9 @@ func clearConfigEnv(t *testing.T) {
 		"DATABASE_URL",
 		"LOG_LEVEL",
 		"CORS_ALLOWED_ORIGINS",
+		"APP_ACCESS_TOKEN",
+		"AI_RATE_LIMIT_PER_MINUTE",
+		"SYNC_RATE_LIMIT_PER_MINUTE",
 		"MAIMEMO_TOKEN",
 		"OPENAI_API_KEY",
 		"OPENAI_BASE_URL",

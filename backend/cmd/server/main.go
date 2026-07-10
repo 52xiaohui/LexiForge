@@ -96,6 +96,9 @@ func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client, aiClie
 	}
 
 	r := gin.New()
+	// Do not trust arbitrary X-Forwarded-For values. A deployment that needs
+	// proxy-aware client IPs can add an explicit allowlist later.
+	_ = r.SetTrustedProxies(nil)
 	r.Use(middleware.Recover(), middleware.Logger(), middleware.CORS(cfg))
 
 	r.GET("/healthz", func(c *gin.Context) {
@@ -103,6 +106,10 @@ func buildRouter(cfg config.Config, db *gorm.DB, mmClient maimemo.Client, aiClie
 	})
 
 	api := r.Group("/api/v1")
+	api.Use(middleware.AccessToken(cfg), middleware.OperationRateLimit(cfg))
+	api.GET("/session", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	vocabulary.NewModule(db).Register(api)
 	dictionary.NewModule(db).Register(api)
