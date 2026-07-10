@@ -13,18 +13,34 @@ import type {
   VocabSummary,
   VocabWord,
 } from "@/types/api"
+import {
+  clearAccessToken,
+  getAccessToken,
+  notifyAccessTokenRejected,
+  setAccessToken,
+} from "@/lib/access-token"
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ??
   "http://localhost:8080/api/v1"
 
-const WEAK_POOL_MIN_WEAK_SCORE = 50
-const WEAK_POOL_MAX_MASTERY = 60
-
 interface APIErrorBody {
   code?: string
   message?: string
   details?: unknown
+}
+
+export class AccessDeniedError extends Error {
+  constructor(message = "A valid LexiForge access token is required.") {
+    super(message)
+    this.name = "AccessDeniedError"
+  }
+}
+
+export function isAccessDeniedError(
+  error: unknown
+): error is AccessDeniedError {
+  return error instanceof AccessDeniedError
 }
 
 interface BackendVocabRecord {
@@ -37,6 +53,9 @@ interface BackendVocabRecord {
   tags: string[] | null
   mastery_score: number
   weak_score: number
+  recommendation_score?: number
+  recommendation_version?: string
+  recommendation_reasons?: Record<string, number>
   next_study_date: string | null
   ignored?: boolean
   pinned?: boolean
@@ -67,6 +86,10 @@ interface BackendArticleListItem {
   coverage_rate: number
   generation_status?: string
   model_name?: string
+  generation_attempts?: number
+  generation_duration_ms?: number
+  input_tokens?: number
+  output_tokens?: number
   created_at?: string
   progress_status?: BackendArticleProgress["status"] | null
   progress_percent?: number
@@ -92,6 +115,14 @@ interface BackendArticleProgress {
   status: "unread" | "reading" | "read"
   progress_percent: number
   last_paragraph_index?: number | null
+}
+
+interface BackendGenerationPreview {
+  words: BackendVocabRecord[]
+  counts_by_response: Record<LastResponse, number>
+  sticking_count: number
+  auto_fill_count: number
+  is_auto: boolean
 }
 
 function inferArticleLength(targetWordCount: number): ArticleLength {
@@ -123,6 +154,9 @@ function mapWord(record: BackendVocabRecord): VocabWord {
     tags: record.tags ?? [],
     mastery_score: record.mastery_score,
     weak_score: record.weak_score,
+    recommendation_score: record.recommendation_score,
+    recommendation_version: record.recommendation_version,
+    recommendation_reasons: record.recommendation_reasons,
     next_study_date: record.next_study_date,
     recognized: record.recognized ?? false,
     mastered: record.mastered ?? false,
@@ -153,6 +187,11 @@ function mapArticle(
     target_word_count: item.target_word_count,
     covered_word_count: item.covered_word_count,
     coverage_rate: item.coverage_rate,
+    generation_status: item.generation_status,
+    generation_attempts: item.generation_attempts,
+    generation_duration_ms: item.generation_duration_ms,
+    input_tokens: item.input_tokens,
+    output_tokens: item.output_tokens,
     created_at: item.created_at ?? new Date(0).toISOString(),
     read: listProgress?.status === "read",
     progress: listProgress ?? undefined,
@@ -172,14 +211,41 @@ function mapArticleWord(
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+interface RequestOptions {
+  accessToken?: string
+  notifyOnUnauthorized?: boolean
+}
+
+function requestHeaders(
+  init: RequestInit | undefined,
+  accept: string,
+  options?: RequestOptions
+): Headers {
+  const headers = new Headers(init?.headers)
+  headers.set("Accept", accept)
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+  const token = options?.accessToken ?? getAccessToken()
+  if (token) headers.set("Authorization", `Bearer ${token}`)
+  return headers
+}
+
+function handleUnauthorized(options?: RequestOptions): void {
+  if (options?.notifyOnUnauthorized === false) return
+  const hadToken = getAccessToken().length > 0
+  clearAccessToken()
+  if (hadToken) notifyAccessTokenRejected()
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  options?: RequestOptions
+): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
+    headers: requestHeaders(init, "application/json", options),
   })
 
   if (!res.ok) {
@@ -189,7 +255,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // Keep the transport error readable when the backend returned no JSON.
     }
-    throw new Error(body?.message || body?.code || `HTTP ${res.status}`)
+    const message = body?.message || body?.code || `HTTP ${res.status}`
+    if (res.status === 401) {
+      handleUnauthorized(options)
+      throw new AccessDeniedError(message)
+    }
+    throw new Error(message)
   }
 
   if (res.status === 204) {
@@ -201,13 +272,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 async function requestText(path: string, init?: RequestInit): Promise<string> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: {
-      Accept: "text/markdown, text/plain;q=0.9, */*;q=0.8",
-      ...init?.headers,
-    },
+    headers: requestHeaders(init, "text/markdown, text/plain;q=0.9, */*;q=0.8"),
   })
 
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized()
+      throw new AccessDeniedError()
+    }
     throw new Error(`HTTP ${res.status}`)
   }
   return res.text()
@@ -298,49 +370,20 @@ async function articleCreatedAtFromList(
   return page.items.find((item) => item.id === id)?.created_at
 }
 
-function buildGenerationPreview(
-  selectedIds: string[],
-  targetCount: number,
-  words: VocabWord[]
-): GenerationPreview {
-  const selected = selectedIds
-    .map((id) => words.find((w) => w.id === id))
-    .filter((w): w is VocabWord => Boolean(w))
-  const seen = new Set(selected.map((w) => w.id))
-  const pool = words
-    .filter(
-      (w) =>
-        !seen.has(w.id) &&
-        (w.weak_score >= WEAK_POOL_MIN_WEAK_SCORE ||
-          w.mastery_score < WEAK_POOL_MAX_MASTERY)
-    )
-    .sort(
-      (a, b) => b.weak_score - a.weak_score || a.mastery_score - b.mastery_score
-    )
-  const plan = [...selected, ...pool].slice(0, targetCount)
-
-  const counts: Record<LastResponse, number> = {
-    FORGET: 0,
-    VAGUE: 0,
-    FAMILIAR: 0,
-    WELL_FAMILIAR: 0,
-  }
-  let sticking = 0
-  for (const word of plan) {
-    counts[word.last_response] += 1
-    if (word.tags.includes("STICKING")) sticking += 1
-  }
-
-  return {
-    words: plan,
-    counts_by_response: counts,
-    sticking_count: sticking,
-    auto_fill_count: Math.max(0, plan.length - selected.length),
-    is_auto: selected.length === 0,
-  }
-}
-
 export const api = {
+  async checkSession(): Promise<void> {
+    await request<{ status: string }>("/session")
+  },
+
+  async unlock(token: string): Promise<void> {
+    const normalized = token.trim()
+    await request<{ status: string }>("/session", undefined, {
+      accessToken: normalized,
+      notifyOnUnauthorized: false,
+    })
+    setAccessToken(normalized)
+  },
+
   async vocabSummary(): Promise<VocabSummary> {
     const summary = await request<BackendVocabSummary>("/vocab/summary")
     return {
@@ -445,6 +488,12 @@ export const api = {
     })
   },
 
+  async regenerateArticle(id: string): Promise<{ article_id: string }> {
+    return request<{ article_id: string }>(`/articles/${id}/regenerate`, {
+      method: "POST",
+    })
+  },
+
   async syncMaimemo(): Promise<SyncResult> {
     return request<SyncResult>("/sync/maimemo", { method: "POST" })
   },
@@ -453,8 +502,20 @@ export const api = {
     selectedIds: string[],
     targetCount: number
   ): Promise<GenerationPreview> {
-    const words = await api.listWeakWords()
-    return buildGenerationPreview(selectedIds, targetCount, words)
+    const preview = await request<BackendGenerationPreview>(
+      "/articles/preview",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          target_word_count: targetCount,
+          target_word_ids: selectedIds,
+        }),
+      }
+    )
+    return {
+      ...preview,
+      words: preview.words.map(mapWord),
+    }
   },
 
   async markArticleRead(id: string): Promise<boolean> {

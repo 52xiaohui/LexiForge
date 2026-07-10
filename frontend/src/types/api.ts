@@ -31,6 +31,9 @@ export interface VocabWord {
   tags: string[]
   mastery_score: number
   weak_score: number
+  recommendation_score?: number
+  recommendation_version?: string
+  recommendation_reasons?: Record<string, number>
   next_study_date: string | null
   /** User flag — word manually marked as mastered, hides from the weak list. */
   mastered?: boolean
@@ -59,6 +62,11 @@ export interface Article {
   target_word_count: number
   covered_word_count: number
   coverage_rate: number
+  generation_status?: "succeeded" | "low_coverage" | "failed" | string
+  generation_attempts?: number
+  generation_duration_ms?: number
+  input_tokens?: number
+  output_tokens?: number
   created_at: string
   /** Client-side read flag (MVP) — backend spec may add this later. */
   read?: boolean
