@@ -49,7 +49,7 @@ const navGroups: NavGroup[] = [
   {
     label: "总览",
     items: [
-      { to: "/dashboard", label: "Dashboard", icon: DashboardCircleIcon },
+      { to: "/dashboard", label: "总览", icon: DashboardCircleIcon },
     ],
   },
   {
@@ -205,7 +205,7 @@ function BrandRow({
     >
       <Link
         to="/dashboard"
-        aria-label="LexiForge · 回到 Dashboard"
+        aria-label="LexiForge · 回到总览"
         className="flex min-w-0 items-center gap-2.5 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       >
         <LexiForgeMark />

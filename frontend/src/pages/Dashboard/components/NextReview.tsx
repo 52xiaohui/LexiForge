@@ -7,9 +7,10 @@ import { Link } from "react-router-dom"
 
 import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { SectionPanel } from "@/components/common/SectionPanel"
+import { StickingBadge } from "@/components/common/StickingBadge"
 import { WeakScoreMeter } from "@/components/common/WeakScoreMeter"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { hasStickingTag } from "@/lib/vocab-tags"
 import type { WeakWord } from "@/types/api"
 
 export interface NextReviewProps {
@@ -50,28 +51,24 @@ export function NextReview({ words }: NextReviewProps) {
               className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
             >
               <div className="min-w-0">
-                  <div className="truncate font-heading text-base font-medium tracking-tight">
-                    {word.spelling}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <LastResponseBadge value={word.last_response} />
-                    {word.tags.includes("STICKING") && (
-                      <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                        反复忘
-                      </Badge>
-                    )}
-                    <span className="text-[11px] text-muted-foreground">
-                      练习 {word.study_count} 次
-                    </span>
-                  </div>
+                <div className="truncate font-heading text-base font-medium tracking-tight">
+                  {word.spelling}
                 </div>
-                <div className="flex shrink-0 flex-col items-end">
-                  <WeakScoreMeter score={word.weak_score} variant="compact" />
-                  <div className="text-[10px] tracking-wider text-muted-foreground uppercase">
-                    weak
-                  </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <LastResponseBadge value={word.last_response} />
+                  {hasStickingTag(word.tags) && <StickingBadge />}
+                  <span className="text-[11px] text-muted-foreground">
+                    练习 {word.study_count} 次
+                  </span>
                 </div>
-              </li>
+              </div>
+              <div className="flex shrink-0 flex-col items-end">
+                <WeakScoreMeter score={word.weak_score} variant="compact" />
+                <div className="text-[10px] tracking-wider text-muted-foreground uppercase">
+                  weak
+                </div>
+              </div>
+            </li>
           ))}
         </ul>
       )}

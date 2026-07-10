@@ -7,9 +7,9 @@ import {
   Sun01Icon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react"
-import { useQuery } from "@tanstack/react-query"
 import { useMatches } from "react-router-dom"
 
+import type { RouteHandle } from "@/app/router"
 import { useTheme } from "@/components/theme-provider"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,29 +22,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useMaimemoSync } from "@/hooks/use-maimemo-sync"
+import { useVocabSummary } from "@/hooks/use-vocab-summary"
 import { formatAbsoluteTime, formatRelativeTime } from "@/lib/formatters"
-import { api } from "@/lib/api"
+import { computeSyncStatus } from "@/lib/sync"
 import { cn } from "@/lib/utils"
-import type { RouteHandle } from "@/app/router"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
-import { toast } from "sonner"
 
 function isRouteHandle(handle: unknown): handle is RouteHandle {
   return typeof handle === "object" && handle !== null && "title" in handle
-}
-
-const SYNC_STALE_HOURS = 24
-
-type SyncStatus = "fresh" | "stale" | "never"
-
-function computeSyncStatus(
-  lastSyncedAt: string | null | undefined
-): SyncStatus {
-  if (!lastSyncedAt) return "never"
-  const diff = Date.now() - new Date(lastSyncedAt).getTime()
-  if (diff > SYNC_STALE_HOURS * 60 * 60 * 1000) return "stale"
-  return "fresh"
 }
 
 export interface TopBarProps {
@@ -58,52 +43,8 @@ export function TopBar({ onMobileMenuClick }: TopBarProps) {
   const title = handle?.title ?? ""
   const subtitle = handle?.subtitle
 
-  const queryClient = useQueryClient()
-  const [cooldownUntil, setCooldownUntil] = useState(0)
-  const [now, setNow] = useState(() => Date.now())
-
-  const { data: summary } = useQuery({
-    queryKey: ["vocab", "summary"],
-    queryFn: () => api.vocabSummary(),
-    // Silence global toast for the TopBar query — the Dashboard will surface
-    // its own state and we don't want two toasts for the same failure.
-    meta: { silent: true },
-  })
-
-  const cooldownRemaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
-
-  useEffect(() => {
-    if (cooldownRemaining <= 0) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [cooldownRemaining])
-
-  const sync = useMutation({
-    mutationFn: () => api.syncMaimemo(),
-    meta: { silent: true },
-    onSuccess: (result) => {
-      setCooldownUntil(Date.now() + 30_000)
-      setNow(Date.now())
-      queryClient.invalidateQueries({ queryKey: ["vocab"] })
-      queryClient.invalidateQueries({ queryKey: ["generate"] })
-      toast.success(result.cached ? "同步结果已复用" : "同步完成", {
-        description: `${result.records_inserted} 新增，${result.records_updated} 更新。`,
-      })
-      if (result.warning) {
-        toast.warning("同步完成但有未取回记录", {
-          description: result.warning,
-        })
-      }
-    },
-    onError: (error) => {
-      toast.error("同步失败", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "请检查后端和 MAIMEMO_TOKEN。",
-      })
-    },
-  })
+  const { data: summary } = useVocabSummary({ silent: true })
+  const { sync, isSyncing, cooldownRemaining } = useMaimemoSync()
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur supports-backdrop-filter:bg-background/60">
@@ -131,9 +72,9 @@ export function TopBar({ onMobileMenuClick }: TopBarProps) {
 
         <SyncStatusButton
           lastSyncedAt={summary?.last_synced_at ?? null}
-          isSyncing={sync.isPending}
+          isSyncing={isSyncing}
           cooldownRemaining={cooldownRemaining}
-          onSync={() => sync.mutate()}
+          onSync={sync}
         />
         <ThemeToggle />
       </div>
@@ -148,9 +89,6 @@ function ThemeToggle() {
     setTheme(resolvedTheme === "dark" ? "light" : "dark")
   }
 
-  // The icon represents the theme the button will *switch to*, which is the
-  // standard pattern. Driving it off `resolvedTheme` ensures the icon stays
-  // accurate when the user is on `system` and the OS flips its preference.
   const nextIcon: IconSvgElement =
     resolvedTheme === "dark" ? Sun01Icon : Moon02Icon
 
@@ -217,10 +155,6 @@ function SyncStatusButton({
           size="sm"
           aria-label={a11yLabel}
           className={cn(
-            // Below `sm` there is no label; collapse the pill into a square
-            // icon-sized button so it doesn't render as an empty stretched
-            // pill next to the icon-sm Menu button. The `!` overrides
-            // size="sm"'s built-in `has-data-[icon=inline-start]:pl-2`.
             "aspect-square w-8 !px-0 sm:aspect-auto sm:w-auto sm:!px-3 sm:has-data-[icon=inline-start]:!pl-2",
             "tabular-nums",
             status === "stale" &&
@@ -234,8 +168,6 @@ function SyncStatusButton({
             strokeWidth={1.8}
             className={cn(isSyncing && "animate-spin")}
           />
-          {/* Hide the label on narrow phones to save space; the icon itself
-              conveys status and the Popover carries the detail. */}
           <span className="hidden sm:inline">{label}</span>
         </Button>
       </PopoverTrigger>

@@ -10,19 +10,20 @@ import {
   SparklesIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { toast } from "sonner"
 
 import { StatCard } from "@/components/common/StatCard"
 import { Button } from "@/components/ui/button"
+import { useMaimemoSync } from "@/hooks/use-maimemo-sync"
+import { useVocabSummary } from "@/hooks/use-vocab-summary"
 import {
   formatAbsoluteTime,
   formatCount,
   formatRelativeTime,
 } from "@/lib/formatters"
 import { api } from "@/lib/api"
+import { queryKeys } from "@/lib/query-keys"
 import { cn } from "@/lib/utils"
 
 import { NextAction } from "./components/NextAction"
@@ -32,73 +33,28 @@ import { RecentArticles } from "./components/RecentArticles"
 const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", { weekday: "long" })
 
 export function Dashboard() {
-  const queryClient = useQueryClient()
-  const [cooldownUntil, setCooldownUntil] = useState(0)
-  const [now, setNow] = useState(() => Date.now())
-
-  const { data: summary, isPending: isSummaryPending } = useQuery({
-    queryKey: ["vocab", "summary"],
-    queryFn: () => api.vocabSummary(),
-  })
+  const { data: summary, isPending: isSummaryPending } = useVocabSummary()
   const { data: articles } = useQuery({
-    queryKey: ["articles", "recent"],
+    queryKey: queryKeys.articles.recent(),
     queryFn: () => api.listRecentArticles(),
   })
   const { data: nextReview } = useQuery({
-    queryKey: ["vocab", "next-review"],
+    queryKey: queryKeys.vocab.nextReview(),
     queryFn: () => api.nextReview(),
   })
   const { data: unreadArticle } = useQuery({
-    queryKey: ["articles", "first-unread"],
+    queryKey: queryKeys.articles.firstUnread(),
     queryFn: () => api.firstUnreadArticle(),
   })
 
-  const syncCooldownRemaining = Math.max(
-    0,
-    Math.ceil((cooldownUntil - now) / 1000)
-  )
-
-  useEffect(() => {
-    if (syncCooldownRemaining <= 0) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [syncCooldownRemaining])
-
-  const sync = useMutation({
-    mutationFn: () => api.syncMaimemo(),
-    meta: { silent: true },
-    onSuccess: (result) => {
-      setCooldownUntil(Date.now() + 30_000)
-      setNow(Date.now())
-      queryClient.invalidateQueries({ queryKey: ["vocab"] })
-      queryClient.invalidateQueries({ queryKey: ["generate"] })
-      toast.success(result.cached ? "同步结果已复用" : "同步完成", {
-        description: `${result.records_inserted} 新增，${result.records_updated} 更新。`,
-      })
-      if (result.warning) {
-        toast.warning("同步完成但有未取回记录", {
-          description: result.warning,
-        })
-      }
-    },
-    onError: (error) => {
-      toast.error("同步失败", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "请检查后端和 MAIMEMO_TOKEN。",
-      })
-    },
-  })
+  const { sync, isSyncing, cooldownRemaining } = useMaimemoSync()
 
   const total = summary?.total ?? 0
   const weak = summary?.weak ?? 0
   const weakPct = total > 0 ? Math.round((weak / total) * 100) : 0
   const lastSync = summary?.last_synced_at ?? null
 
-  // First-run state: no vocab yet means the backend hasn't seen a sync. We
-  // surface a dedicated onboarding card and hide the zero-filled StatCards to
-  // avoid making the app look broken.
+  // First-run state: no vocab yet means the backend hasn't seen a sync.
   const isFirstRun = summary != null && total === 0 && weak === 0
 
   return (
@@ -117,15 +73,12 @@ export function Dashboard() {
               summary={summary}
               unreadArticle={unreadArticle ?? null}
               isLoading={isSummaryPending}
-              isSyncing={sync.isPending}
-              syncCooldownRemaining={syncCooldownRemaining}
-              onSync={() => sync.mutate()}
+              isSyncing={isSyncing}
+              syncCooldownRemaining={cooldownRemaining}
+              onSync={sync}
             />
           </section>
 
-          {/* Phones: a single consolidated summary strip instead of four
-              separate ring'd StatCards, so 总览 doesn't open with a wall of
-              boxes. The full StatCard grid returns from `sm` up. */}
           <MobileStatStrip
             total={formatCount(total)}
             weak={formatCount(weak)}
@@ -170,11 +123,6 @@ export function Dashboard() {
   )
 }
 
-/**
- * Empty-state card shown when the user has no vocab at all. Replaces the
- * zero-filled StatCard row so the first screen explains how to make the
- * product useful instead of showing "0 / 0 / 0".
- */
 function FirstRunCard() {
   return (
     <section className="space-y-6">
@@ -204,7 +152,7 @@ function FirstRunCard() {
           <StepCard
             step="2"
             title="挑选薄弱词"
-            desc="按 last_response、STICKING 和 weak_score 过滤，也可以手动勾选。"
+            desc="按反馈、反复忘和 weak_score 过滤，也可以手动勾选。"
             icon={AlertCircleIcon}
           />
           <StepCard
@@ -265,11 +213,6 @@ interface MobileStatStripProps {
   lastSync: string | null
 }
 
-/**
- * Mobile-only condensed equivalent of the four StatCards. One bordered
- * container split into a 2×2 grid by hairline dividers — keeps the same four
- * numbers but as a single visual unit instead of four stacked ring'd boxes.
- */
 function MobileStatStrip({
   total,
   weak,

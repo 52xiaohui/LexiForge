@@ -15,6 +15,7 @@ import {
   formatCoverage,
   formatRelativeTime,
 } from "@/lib/formatters"
+import { isSyncStale } from "@/lib/sync"
 import { cn } from "@/lib/utils"
 import type { Article, VocabSummary } from "@/types/api"
 
@@ -48,8 +49,6 @@ interface Plan {
   secondaryTo?: string
 }
 
-const SYNC_STALE_HOURS = 24
-
 const toneStyles: Record<
   Tone,
   {
@@ -79,28 +78,16 @@ const toneStyles: Record<
   },
 }
 
-function getLastSync(summary: VocabSummary | undefined): number | null {
-  return summary?.last_synced_at
-    ? new Date(summary.last_synced_at).getTime()
-    : null
-}
-
-function isSyncStale(summary: VocabSummary | undefined): boolean {
-  const lastSync = getLastSync(summary)
-  const staleMs = SYNC_STALE_HOURS * 60 * 60 * 1000
-  return !lastSync || Date.now() - lastSync > staleMs
-}
-
 function syncPlan(summary: VocabSummary | undefined): Plan {
-  const lastSync = getLastSync(summary)
+  const last = summary?.last_synced_at
   return {
     id: "sync",
     tone: "sync",
     icon: AlertCircleIcon,
     eyebrow: "同步异常",
     headline: "先把墨墨数据同步到最新",
-    description: lastSync
-      ? `上次同步 ${formatRelativeTime(summary!.last_synced_at)}。生成和薄弱词推荐都依赖这份数据。`
+    description: last
+      ? `上次同步 ${formatRelativeTime(last)}。生成和薄弱词推荐都依赖这份数据。`
       : "还没有同步过墨墨的学习数据。当前薄弱词列表可能不代表你的真实进度。",
     primaryLabel: "重新同步",
     primaryTo: "/dashboard",
@@ -165,7 +152,7 @@ function computeRecommendedPlan(
   unread: Article | null | undefined
 ): Plan {
   // 1. Stale sync takes highest priority: without fresh data nothing else is useful.
-  if (isSyncStale(summary)) return syncPlan(summary)
+  if (isSyncStale(summary?.last_synced_at)) return syncPlan(summary)
 
   // 2. Unread article → continue reading.
   if (unread) return continuePlan(unread)
@@ -185,7 +172,7 @@ function computeCandidatePlans(
   const recommended = computeRecommendedPlan(summary, unread)
   const candidates: Plan[] = []
 
-  if (isSyncStale(summary)) candidates.push(syncPlan(summary))
+  if (isSyncStale(summary?.last_synced_at)) candidates.push(syncPlan(summary))
   if (unread) candidates.push(continuePlan(unread))
 
   const weakCount = summary?.weak ?? 0

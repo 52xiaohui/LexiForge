@@ -8,6 +8,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 
+import { ArticleMeta } from "@/components/articles/ArticleMeta"
+import { ListSkeleton } from "@/components/common/ListSkeleton"
+import { PageHeader } from "@/components/common/PageHeader"
 import { EmptyState, ErrorState } from "@/components/common/StatusPanel"
 import {
   AlertDialog,
@@ -20,16 +23,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import {
-  formatArticleLength,
-  formatCoverage,
-  formatDifficulty,
-  formatRelativeTime,
-} from "@/lib/formatters"
+import { toastError } from "@/lib/errors"
 import { api } from "@/lib/api"
+import { queryKeys } from "@/lib/query-keys"
 import { withSim } from "@/lib/query-sim"
 import type { Article } from "@/types/api"
 
@@ -41,7 +38,7 @@ export function Articles() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["articles", "list"],
+    queryKey: queryKeys.articles.list(),
     queryFn: withSim(() => api.listArticles(), { emptyValue: [] }),
   })
 
@@ -50,21 +47,18 @@ export function Articles() {
       await api.deleteArticle(article.id)
       return article
     },
-    // Status-card-less surface — own the feedback via sonner.
     meta: { silent: true },
     onSuccess: (detail) => {
-      queryClient.invalidateQueries({ queryKey: ["articles"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.articles.all })
       toast("已删除文章", { description: `《${detail.title}》` })
     },
     onError: (error) => {
-      toast.error("删除失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("删除失败", error)
     },
   })
 
   if (isPending) {
-    return <ArticleListSkeleton />
+    return <ListSkeleton header="articles" />
   }
 
   if (isError) {
@@ -100,21 +94,21 @@ export function Articles() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          共 {data.length} 篇文章 · 按生成时间倒序
-        </p>
-        <Button asChild size="sm">
-          <Link to="/articles/new">
-            <HugeiconsIcon
-              icon={SparklesIcon}
-              data-icon="inline-start"
-              strokeWidth={1.8}
-            />
-            新文章
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        description={`共 ${data.length} 篇文章 · 按生成时间倒序`}
+        action={
+          <Button asChild size="sm">
+            <Link to="/articles/new">
+              <HugeiconsIcon
+                icon={SparklesIcon}
+                data-icon="inline-start"
+                strokeWidth={1.8}
+              />
+              新文章
+            </Link>
+          </Button>
+        }
+      />
 
       <ul className="divide-y divide-border/60 overflow-hidden rounded-2xl border border-border/60 sm:space-y-3 sm:divide-y-0 sm:overflow-visible sm:rounded-none sm:border-0">
         {data.map((article) => (
@@ -131,23 +125,7 @@ export function Articles() {
                   {article.title}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <Badge variant="outline" className="text-[10px]">
-                  {formatDifficulty(article.difficulty)}
-                </Badge>
-                <Badge variant="outline" className="text-[10px]">
-                  {formatArticleLength(article.article_length)}
-                </Badge>
-                <span>覆盖 {formatCoverage(article.coverage_rate)}</span>
-                <span aria-hidden>·</span>
-                <span>
-                  {article.covered_word_count} / {article.target_word_count} 词
-                </span>
-                <span aria-hidden>·</span>
-                <span>{article.topic}</span>
-                <span aria-hidden>·</span>
-                <span>{formatRelativeTime(article.created_at)}</span>
-              </div>
+              <ArticleMeta article={article} density="full" />
             </Link>
 
             <AlertDialog>
@@ -179,33 +157,6 @@ export function Articles() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function ArticleListSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <Skeleton className="h-4 w-44" />
-        <Skeleton className="h-8 w-24 rounded-md" />
-      </div>
-      <ul className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <li
-            key={i}
-            className="flex flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4"
-          >
-            <Skeleton className="h-5 w-2/3" />
-            <div className="flex flex-wrap items-center gap-2">
-              <Skeleton className="h-4 w-12" />
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-4 w-20" />
-              <Skeleton className="h-4 w-24" />
-            </div>
           </li>
         ))}
       </ul>

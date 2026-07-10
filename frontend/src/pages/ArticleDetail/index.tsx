@@ -1,4 +1,5 @@
 import {
+  AlertCircleIcon,
   ArrowLeft01Icon,
   CheckmarkCircle02Icon,
 } from "@hugeicons/core-free-icons"
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useReadingPrefs } from "@/hooks/use-reading-prefs"
+import { toastError } from "@/lib/errors"
 import {
   formatArticleLength,
   formatCoverage,
@@ -20,12 +22,9 @@ import {
   formatRelativeTime,
 } from "@/lib/formatters"
 import { api } from "@/lib/api"
+import { queryKeys } from "@/lib/query-keys"
 import { withSim } from "@/lib/query-sim"
-import type {
-  ArticleDetail as ArticleDetailType,
-  CefrLevel,
-  VocabWord,
-} from "@/types/api"
+import type { ArticleDetail as ArticleDetailType, VocabWord } from "@/types/api"
 
 import { ArticleBody } from "./components/ArticleBody"
 import { CoverageDrawer } from "./components/CoverageDrawer"
@@ -53,14 +52,14 @@ export function ArticleDetail() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["articles", id],
+    queryKey: queryKeys.articles.detail(id),
     queryFn: withSim(() => api.getArticle(id), { emptyValue: null }),
     enabled: Boolean(id),
   })
 
   // Load the vocab index so target popovers can show current learning signals.
   const { data: words = [] } = useQuery({
-    queryKey: ["vocab", "words"],
+    queryKey: queryKeys.vocab.allWords(),
     queryFn: () => api.listWords(),
   })
   const wordIndex = useMemo(() => {
@@ -97,7 +96,7 @@ export function ArticleDetail() {
     mutationFn: async (articleId: string) => api.markArticleRead(articleId),
     meta: { silent: true },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["articles"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.articles.all })
     },
   })
 
@@ -126,7 +125,7 @@ export function ArticleDetail() {
     },
     meta: { silent: true },
     onSuccess: (word) => {
-      queryClient.invalidateQueries({ queryKey: ["vocab"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
       toast("已标记为掌握", {
         description: word.spelling
           ? `「${word.spelling}」从薄弱词移除`
@@ -135,9 +134,7 @@ export function ArticleDetail() {
       })
     },
     onError: (error) => {
-      toast.error("标记掌握失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("标记掌握失败", error)
     },
   })
 
@@ -154,39 +151,26 @@ export function ArticleDetail() {
     },
     meta: { silent: true },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["vocab"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
     },
     onError: (error) => {
-      toast.error("记录失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("记录失败", error)
     },
   })
 
   const regenerate = useMutation({
-    mutationFn: async (source: ArticleDetailType) => {
-      return api.generateArticle({
-        topic: source.topic,
-        difficulty:
-          source.difficulty === "B1-B2"
-            ? ("B2" as CefrLevel)
-            : (source.difficulty as CefrLevel),
-        target_word_count: source.target_word_count,
-        article_length: source.article_length,
-      })
-    },
+    mutationFn: async (source: ArticleDetailType) =>
+      api.regenerateArticle(source.id),
     meta: { silent: true },
     onSuccess: ({ article_id }) => {
-      queryClient.invalidateQueries({ queryKey: ["articles"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.articles.all })
       toast.success("已用相同参数生成新文章", {
         description: "旧文章仍保留在历史里，正在跳转到新文章。",
       })
       navigate(`/articles/${article_id}`)
     },
     onError: (error) => {
-      toast.error("重新生成失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("重新生成失败", error)
     },
   })
 
@@ -293,7 +277,10 @@ export function ArticleDetail() {
     if (!article) return
     if (article.read) return
     const previous = trackedProgressRef.current
-    if (previous?.articleId === article.id && paragraphIdx <= previous.paragraphIdx) {
+    if (
+      previous?.articleId === article.id &&
+      paragraphIdx <= previous.paragraphIdx
+    ) {
       return
     }
     const paragraphCount = parsed.paragraphs.length
@@ -425,12 +412,10 @@ export function ArticleDetail() {
         toMaster.map((w) => api.markWordMastered(w.word_id, true, article.id))
       )
     } catch (error) {
-      toast.error("批量标记失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("批量标记失败", error)
       return
     }
-    queryClient.invalidateQueries({ queryKey: ["vocab"] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
     toast("已批量标记已掌握", {
       description: `共 ${toMaster.length} 个词从薄弱词中移除`,
       duration: 8000,
@@ -451,9 +436,7 @@ export function ArticleDetail() {
       URL.revokeObjectURL(url)
       toast.success("导出成功", { description: `${a.download}` })
     } catch (error) {
-      toast.error("导出失败", {
-        description: error instanceof Error ? error.message : "请稍后再试。",
-      })
+      toastError("导出失败", error)
     }
   }
 
@@ -555,6 +538,21 @@ export function ArticleDetail() {
             </span>
           </div>
         </header>
+
+        {article.generation_status === "low_coverage" && (
+          <div className="mb-5 flex items-start gap-3 border-y border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            <HugeiconsIcon
+              icon={AlertCircleIcon}
+              size={18}
+              strokeWidth={1.8}
+              className="mt-0.5 shrink-0"
+            />
+            <p>
+              这篇文章的目标词覆盖率低于
+              90%。未覆盖词仍保留在词表中，可以重新生成后再练习。
+            </p>
+          </div>
+        )}
 
         <ArticleBody
           articleId={article.id}
