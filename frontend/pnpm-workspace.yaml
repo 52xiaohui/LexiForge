@@ -1,0 +1,5 @@
+# pnpm 11+ stores lifecycle-script approvals here (not package.json "pnpm" field).
+# esbuild is required for Vite; msw is pulled transitively by shadcn tooling.
+allowBuilds:
+  esbuild: true
+  msw: true
