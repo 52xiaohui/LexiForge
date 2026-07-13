@@ -344,11 +344,37 @@ func (r *Repository) GetArticle(ctx context.Context, userID, articleID uuid.UUID
 		return ArticleDetail{}, err
 	}
 	var words []ArticleWord
+	// Join per-user study signals for target words so the reader does not need
+	// a second full-vocabulary fetch. LEFT JOIN: uncovered/orphan words still
+	// render; signal fields stay zero when no study_record exists.
 	if err := r.db.WithContext(ctx).Table("article_words AS aw").
 		Select(`aw.id, aw.article_id, aw.word_id, aw.spelling, COALESCE(dict.translation, '') AS translation,
 			aw.form, aw.occurrence, aw.context_before, aw.context_after, aw.char_offset, aw.char_length,
-			aw.is_covered, aw.created_at`).
+			aw.is_covered, aw.created_at,
+			sr.id AS study_record_id,
+			COALESCE(sr.last_response, '') AS last_response,
+			COALESCE(sr.study_count, 0) AS study_count,
+			COALESCE(sr.mastery_score, 0) AS mastery_score,
+			COALESCE(sr.weak_score, 0) AS weak_score,
+			(COALESCE(uwp.ignored, false) = true AND (uwp.ignored_until IS NULL OR uwp.ignored_until > NOW())) AS ignored,
+			COALESCE((
+				SELECT wle.event_type
+				FROM word_learning_events AS wle
+				WHERE wle.user_id = ?
+					AND wle.word_id = aw.word_id
+					AND wle.event_type IN ('recognized_in_context', 'failed_in_context')
+				ORDER BY wle.created_at DESC
+				LIMIT 1
+			) = 'recognized_in_context', false) AS recognized,
+			EXISTS (
+				SELECT 1 FROM word_learning_events AS wle
+				WHERE wle.user_id = ?
+					AND wle.word_id = aw.word_id
+					AND wle.event_type = 'manually_mastered'
+			) AS mastered`, userID, userID).
 		Joins(dictionaryTranslationJoin("aw.spelling")).
+		Joins("LEFT JOIN study_records AS sr ON sr.word_id = aw.word_id AND sr.user_id = ?", userID).
+		Joins("LEFT JOIN user_word_preferences AS uwp ON uwp.user_id = ? AND uwp.word_id = aw.word_id", userID).
 		Where("aw.article_id = ?", row.ID).
 		Order("aw.spelling ASC").
 		Find(&words).Error; err != nil {

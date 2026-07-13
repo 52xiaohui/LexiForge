@@ -277,11 +277,34 @@ Response shape:
     "target_word_count": 30,
     "covered_word_count": 29,
     "coverage_rate": 0.9667,
-    "generation_params": {}
+    "generation_params": {},
+    "created_at": "2026-07-10T12:00:00Z"
   },
-  "words": []
+  "words": [
+    {
+      "word_id": "uuid",
+      "spelling": "stoic",
+      "translation": "...",
+      "char_offset": 12,
+      "char_length": 5,
+      "is_covered": true,
+      "study_record_id": "uuid",
+      "last_response": "VAGUE",
+      "study_count": 4,
+      "mastery_score": 42,
+      "weak_score": 88,
+      "recognized": false,
+      "mastered": false,
+      "ignored": false
+    }
+  ]
 }
 ```
+
+Each target word includes optional per-user learning signals joined from
+`study_records`, preferences, and recent word events so the reader UI does not
+need a full vocabulary index fetch. `created_at` is always present on the
+article object.
 
 ## Article Progress
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { clearAccessToken, getAccessToken } from "@/lib/access-token"
 
-import { api } from "./api"
+import { api, wordIndexFromArticleWords } from "./api"
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -96,5 +96,63 @@ describe("api transport and generation contracts", () => {
     expect(preview.words[0]?.recommendation_reasons).toEqual({
       failed_in_context: 35,
     })
+  })
+
+  it("maps article detail learning signals without a second vocab list fetch", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/progress")) {
+        return jsonResponse({
+          status: "reading",
+          progress_percent: 10,
+          last_paragraph_index: 0,
+        })
+      }
+      return jsonResponse({
+        article: {
+          id: "article-1",
+          title: "Test",
+          topic: "campus",
+          difficulty: "B1",
+          article_length: "short",
+          content_markdown: "Hello **stoic** world.",
+          target_word_count: 1,
+          covered_word_count: 1,
+          coverage_rate: 1,
+          created_at: "2026-07-10T12:00:00Z",
+        },
+        words: [
+          {
+            word_id: "word-1",
+            spelling: "stoic",
+            translation: "坚忍的",
+            char_offset: 6,
+            char_length: 5,
+            is_covered: true,
+            study_record_id: "record-1",
+            last_response: "FORGET",
+            study_count: 3,
+            mastery_score: 20,
+            weak_score: 110,
+            recognized: true,
+            mastered: false,
+            ignored: false,
+          },
+        ],
+      })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const detail = await api.getArticle("article-1")
+    expect(detail?.created_at).toBe("2026-07-10T12:00:00Z")
+    expect(detail?.article_words[0]?.weak_score).toBe(110)
+    expect(detail?.article_words[0]?.recognized).toBe(true)
+
+    const index = wordIndexFromArticleWords(detail!.article_words)
+    expect(index.get("word-1")?.spelling).toBe("stoic")
+    expect(index.get("record-1")?.weak_score).toBe(110)
+    expect(index.get("word-1")?.recognized).toBe(true)
+    // Only detail + progress — never a full vocab list.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

@@ -21,10 +21,10 @@ import {
   formatDifficulty,
   formatRelativeTime,
 } from "@/lib/formatters"
-import { api } from "@/lib/api"
+import { api, wordIndexFromArticleWords } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
 import { withSim } from "@/lib/query-sim"
-import type { ArticleDetail as ArticleDetailType, VocabWord } from "@/types/api"
+import type { ArticleDetail as ArticleDetailType } from "@/types/api"
 
 import { ArticleBody } from "./components/ArticleBody"
 import { CoverageDrawer } from "./components/CoverageDrawer"
@@ -57,19 +57,12 @@ export function ArticleDetail() {
     enabled: Boolean(id),
   })
 
-  // Load the vocab index so target popovers can show current learning signals.
-  const { data: words = [] } = useQuery({
-    queryKey: queryKeys.vocab.allWords(),
-    queryFn: () => api.listWords(),
-  })
-  const wordIndex = useMemo(() => {
-    const map = new Map<string, VocabWord>()
-    for (const w of words) {
-      map.set(w.id, w)
-      if (w.word_id) map.set(w.word_id, w)
-    }
-    return map
-  }, [words])
+  // Learning signals for target popovers come embedded on article_words —
+  // no full-vocabulary listWords() round-trip.
+  const wordIndex = useMemo(
+    () => wordIndexFromArticleWords(article?.article_words ?? []),
+    [article?.article_words]
+  )
 
   const prefs = useReadingPrefs()
 
@@ -126,6 +119,11 @@ export function ArticleDetail() {
     meta: { silent: true },
     onSuccess: (word) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
+      if (id) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.articles.detail(id),
+        })
+      }
       toast("已标记为掌握", {
         description: word.spelling
           ? `「${word.spelling}」从薄弱词移除`
@@ -152,6 +150,11 @@ export function ArticleDetail() {
     meta: { silent: true },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
+      if (id) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.articles.detail(id),
+        })
+      }
     },
     onError: (error) => {
       toastError("记录失败", error)
@@ -416,6 +419,11 @@ export function ArticleDetail() {
       return
     }
     queryClient.invalidateQueries({ queryKey: queryKeys.vocab.all })
+    if (id) {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.articles.detail(id),
+      })
+    }
     toast("已批量标记已掌握", {
       description: `共 ${toMaster.length} 个词从薄弱词中移除`,
       duration: 8000,

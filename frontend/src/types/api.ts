@@ -83,6 +83,18 @@ export interface ArticleWord {
   /** Code-point length. */
   char_length: number
   is_covered: boolean
+  /**
+   * Per-user learning signals embedded by GET /articles/:id so the reader
+   * does not need a full vocab index. Absent/zero when no study_record.
+   */
+  study_record_id?: string
+  last_response?: LastResponse
+  study_count?: number
+  mastery_score?: number
+  weak_score?: number
+  recognized?: boolean
+  mastered?: boolean
+  ignored?: boolean
 }
 
 export interface SyncResult {

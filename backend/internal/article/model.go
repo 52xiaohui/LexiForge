@@ -70,6 +70,10 @@ func (ArticleGenerationRun) TableName() string { return "article_generation_runs
 
 // ArticleWord mirrors the `article_words` table from docs/core/data-model.md.
 // Defensive `unique(article_id, word_id)` — duplicate inserts indicate a bug.
+//
+// Learning-signal fields (StudyRecordID … Mastered) are read-only joins used by
+// GetArticle so the reader can render target popovers without loading the full
+// vocabulary index. They are never persisted on article_words.
 type ArticleWord struct {
 	ID            uuid.UUID            `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	ArticleID     uuid.UUID            `gorm:"type:uuid;not null;index;uniqueIndex:uq_article_words_article_word" json:"article_id"`
@@ -84,6 +88,15 @@ type ArticleWord struct {
 	CharLength    *int                 `json:"char_length,omitempty"`
 	IsCovered     bool                 `gorm:"not null;default:false" json:"is_covered"`
 	CreatedAt     time.Time            `json:"created_at"`
+	// Joined study / preference / event signals (GetArticle only).
+	StudyRecordID *uuid.UUID `gorm:"->;column:study_record_id" json:"study_record_id,omitempty"`
+	LastResponse  string     `gorm:"->;column:last_response" json:"last_response,omitempty"`
+	StudyCount    int        `gorm:"->;column:study_count" json:"study_count"`
+	MasteryScore  int        `gorm:"->;column:mastery_score" json:"mastery_score"`
+	WeakScore     int        `gorm:"->;column:weak_score" json:"weak_score"`
+	Recognized    bool       `gorm:"->;column:recognized" json:"recognized"`
+	Mastered      bool       `gorm:"->;column:mastered" json:"mastered"`
+	Ignored       bool       `gorm:"->;column:ignored" json:"ignored"`
 	Article       Article              `gorm:"foreignKey:ArticleID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 	Word          vocabulary.VocabWord `gorm:"foreignKey:WordID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"-"`
 }

@@ -108,6 +108,14 @@ interface BackendArticleDetail {
     char_offset: number | null
     char_length: number | null
     is_covered: boolean
+    study_record_id?: string | null
+    last_response?: string
+    study_count?: number
+    mastery_score?: number
+    weak_score?: number
+    recognized?: boolean
+    mastered?: boolean
+    ignored?: boolean
   }>
 }
 
@@ -208,7 +216,47 @@ function mapArticleWord(
     char_offset: word.char_offset ?? -1,
     char_length: word.char_length ?? 0,
     is_covered: word.is_covered,
+    study_record_id: word.study_record_id ?? undefined,
+    last_response: word.last_response
+      ? normalizeLastResponse(word.last_response)
+      : undefined,
+    study_count: word.study_count,
+    mastery_score: word.mastery_score,
+    weak_score: word.weak_score,
+    recognized: word.recognized ?? false,
+    mastered: word.mastered ?? false,
+    ignored: word.ignored ?? false,
   }
+}
+
+/**
+ * Build a compact word index from article target words (with embedded
+ * learning signals). Keys include both `word_id` and `study_record_id`.
+ */
+export function wordIndexFromArticleWords(
+  words: ArticleWord[]
+): Map<string, VocabWord> {
+  const map = new Map<string, VocabWord>()
+  for (const w of words) {
+    const vw: VocabWord = {
+      id: w.study_record_id ?? w.word_id,
+      word_id: w.word_id,
+      spelling: w.spelling,
+      translation: w.translation,
+      last_response: w.last_response ?? "VAGUE",
+      study_count: w.study_count ?? 0,
+      tags: [],
+      mastery_score: w.mastery_score ?? 0,
+      weak_score: w.weak_score ?? 0,
+      next_study_date: null,
+      recognized: w.recognized ?? false,
+      mastered: w.mastered ?? false,
+      ignored: w.ignored ?? false,
+    }
+    map.set(w.word_id, vw)
+    if (w.study_record_id) map.set(w.study_record_id, vw)
+  }
+  return map
 }
 
 interface RequestOptions {
@@ -361,15 +409,6 @@ async function listWordsPage(
   }
 }
 
-async function articleCreatedAtFromList(
-  id: string
-): Promise<string | undefined> {
-  const page = await request<Page<BackendArticleListItem>>(
-    "/articles?page_size=100"
-  )
-  return page.items.find((item) => item.id === id)?.created_at
-}
-
 export const api = {
   async checkSession(): Promise<void> {
     await request<{ status: string }>("/session")
@@ -444,10 +483,8 @@ export const api = {
       request<BackendArticleDetail>(`/articles/${id}`),
       request<BackendArticleProgress>(`/articles/${id}/progress`),
     ])
-    const createdAt =
-      detail.article.created_at ?? (await articleCreatedAtFromList(id))
     return {
-      ...mapArticle({ ...detail.article, created_at: createdAt }, progress),
+      ...mapArticle(detail.article, progress),
       content_markdown: detail.article.content_markdown,
       article_words: detail.words.map(mapArticleWord),
     }
