@@ -21,7 +21,7 @@ Work proceeds in this order.
 ### Wave 0 — Ship and validate
 
 1. [x] P0/P1 pilot hardening (access token, rate limits, preview, reco v2, telemetry, CI)
-2. [ ] Push commits; confirm GitHub CI green (backend + frontend + image gate)
+2. [x] Push commits; GitHub CI green (backend + frontend; image workflow separately green)
 3. [ ] Deploy private pilot (Postgres + API + static FE + env secrets)
 4. [ ] Hand-run golden path checklist and file friction notes
 
