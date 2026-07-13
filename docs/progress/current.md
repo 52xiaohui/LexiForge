@@ -5,62 +5,82 @@
 ## Stage
 
 ```text
-Stage: MVP pilot hardening
+Stage: MVP private pilot
 Date: 2026-07-10
-Status: P0/P1 implementation complete; local validation passed, CI pending publish
+Status: Hardening shipped; pilot validation in progress
 ```
 
-Goal: make the single-user MVP safe to deploy, close the generation contract,
-and let local reading feedback influence future article selection without
-overwriting external learning facts.
+Goal: verify the main learning loop on a real deployment (sync → select →
+generate → read → feedback → better selection), fix path-critical friction, and
+only promote new scope after lived-in usage notes.
 
 ## Execution Queue
 
 Work proceeds in this order.
 
-1. [x] P0: protect production `/api/v1` with a single-user Bearer token
-2. [x] P0: add browser session unlock without embedding the token in Vite output
-3. [x] P0: rate-limit AI generation/regeneration and MaiMemo sync
-4. [x] P0: route article regeneration through stored target-record snapshots
-5. [x] P0: replace frontend preview approximation with `POST /articles/preview`
-6. [x] P0: show low-coverage articles explicitly in the reader
-7. [x] P0: add backend/frontend CI and gate backend image publication on tests
-8. [x] P1: add feedback-aware `recommendation v2`
-   - latest contextual failure raises priority
-   - recent recognition lowers priority temporarily
-   - recent article exposure adds a diversity cooldown
-   - pinned words receive a boost
-   - ignored and manually mastered words remain hard exclusions
-9. [x] P1: persist recommendation version, score, and reasons in generation snapshots
-10. [x] P1: persist generation attempts, latency, model, tokens, coverage, and safe errors
-11. [x] P1: expose recent telemetry through `GET /articles/generation-runs`
-12. [x] Correct `ignored_until` so expired preferences become eligible again
+### Wave 0 — Ship and validate
+
+1. [x] P0/P1 pilot hardening (access token, rate limits, preview, reco v2, telemetry, CI)
+2. [ ] Push commits; confirm GitHub CI green (backend + frontend + image gate)
+3. [ ] Deploy private pilot (Postgres + API + static FE + env secrets)
+4. [ ] Hand-run golden path checklist and file friction notes
+
+Golden path checklist:
+
+```text
+AccessGate unlock (good/bad token)
+First MaiMemo sync → dashboard / first-run
+Weak filter → select → generate (preview matches outcome)
+Read → recognize / fail / master / ignore → next preview order changes
+Low-coverage banner → regenerate reuses snapshot
+Double-click generate/sync → rate limit readable
+Export Markdown + soft delete
+```
+
+### Wave 1 — Path-critical engineering
+
+5. [x] Article detail embeds per-target learning signals (no full `listWords` fetch)
+6. [ ] Article list pagination (drop hard `page_size=100` ceiling on history/dashboard)
+7. [x] Detail `created_at` always from API; removed list-scan fallback
+8. [ ] 1–2 weeks of real use: validate recommendation v2 is *perceivable*
+9. [ ] Optional: generation-runs ops view or curl/script for token cost anxiety
+
+### Wave 2 — After pilot evidence only
+
+10. [ ] From friction notes, promote **at most one** item from `ideas/future.md`
+11. [ ] Explicitly defer: multi-user auth, Redis async jobs, full SRS, exam mode
 
 ## Validation Notes
 
-Latest local diagnostic run:
+Latest local diagnostic run (hardening baseline):
 
 ```text
-backend: Go 1.26.2 go test ./... passed against an isolated PostgreSQL 17 instance
-backend: Go 1.26.2 go vet ./... passed
-frontend: ./node_modules/.bin/tsc --noEmit passed
-frontend: ./node_modules/.bin/eslint . passed
-frontend: ./node_modules/.bin/vitest run passed (19 tests)
-frontend: ./node_modules/.bin/vite build passed
-repo: git diff --check passed
+backend: Go go test ./... against isolated PostgreSQL 17
+backend: go vet ./...
+frontend: tsc --noEmit
+frontend: eslint .
+frontend: vitest run
+frontend: vite build
 ```
 
-GitHub CI provisions PostgreSQL 17 and sets `LEXIFORGE_TEST_DATABASE_URL`, so
-the integration suite runs there instead of silently skipping. The backend image
-workflow runs the same database-backed test gate before publishing.
-
-Repeat these checks before each deployment:
+Repeat before each deployment:
 
 ```bash
+# backend/
 go test ./...
 go vet ./...
+
+# frontend/
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/eslint .
 ./node_modules/.bin/vitest run
 ./node_modules/.bin/vite build
+```
+
+## Pilot friction log
+
+Capture raw notes here (or link out). Do not invent product features from theory.
+
+```text
+(date) —
 ```
