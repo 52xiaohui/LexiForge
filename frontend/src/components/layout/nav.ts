@@ -88,3 +88,21 @@ export function formatWeakBadge(count: number | undefined): string | null {
   if (count > 999) return "999+"
   return String(count)
 }
+
+/**
+ * Compact badge label for icon-sized chips (sidebar rail / mobile tabs).
+ * Accepts either a numeric string or the "999+" overflow form.
+ */
+export function formatCompactBadge(
+  badge: string,
+  compactMax = 99
+): string {
+  if (badge.endsWith("+")) {
+    const n = Number(badge.slice(0, -1))
+    if (Number.isFinite(n) && n > compactMax) return `${compactMax}+`
+    return badge
+  }
+  const n = Number(badge)
+  if (Number.isFinite(n) && n > compactMax) return `${compactMax}+`
+  return badge
+}

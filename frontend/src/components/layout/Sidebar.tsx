@@ -12,6 +12,7 @@ import { useVocabSummary } from "@/hooks/use-vocab-summary"
 import { cn } from "@/lib/utils"
 
 import {
+  formatCompactBadge,
   formatWeakBadge,
   generateNavItem,
   isNavItemActive,
@@ -245,7 +246,7 @@ function NavItemLink({
         <HugeiconsIcon icon={item.icon} size={16} strokeWidth={1.8} />
         {collapsed && badge && (
           <span className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-500 px-0.5 text-[8px] font-semibold text-white tabular-nums">
-            {Number(badge) > 99 ? "99+" : badge}
+            {formatCompactBadge(badge)}
           </span>
         )}
       </span>

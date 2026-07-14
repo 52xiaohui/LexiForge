@@ -5,6 +5,7 @@ import { useVocabSummary } from "@/hooks/use-vocab-summary"
 import { cn } from "@/lib/utils"
 
 import {
+  formatCompactBadge,
   formatWeakBadge,
   isNavItemActive,
   mobileTabItems,
@@ -49,8 +50,10 @@ export function MobileBottomNav() {
                 {isPrimary ? (
                   <span
                     className={cn(
-                      "mb-0.5 grid size-10 place-items-center rounded-2xl text-primary-foreground shadow-sm",
-                      active ? "bg-primary" : "bg-primary/90"
+                      "mb-0.5 grid size-10 place-items-center rounded-2xl text-primary-foreground shadow-sm transition-transform",
+                      active
+                        ? "bg-primary ring-2 ring-primary/35 ring-offset-2 ring-offset-background scale-105"
+                        : "bg-primary/85 opacity-95"
                     )}
                   >
                     <HugeiconsIcon icon={item.icon} size={18} strokeWidth={1.8} />
@@ -60,12 +63,17 @@ export function MobileBottomNav() {
                     <HugeiconsIcon icon={item.icon} size={20} strokeWidth={1.8} />
                     {badge && (
                       <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-500 px-0.5 text-[8px] font-semibold text-white tabular-nums">
-                        {Number(badge) > 99 ? "99+" : badge}
+                        {formatCompactBadge(badge)}
                       </span>
                     )}
                   </span>
                 )}
-                <span className="max-w-full truncate">
+                <span
+                  className={cn(
+                    "max-w-full truncate",
+                    active && "font-medium"
+                  )}
+                >
                   {item.shortLabel ?? item.label}
                 </span>
               </Link>
