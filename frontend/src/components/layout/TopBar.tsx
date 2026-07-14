@@ -1,7 +1,6 @@
 import {
   AlertCircleIcon,
   CheckmarkCircle02Icon,
-  Menu02Icon,
   Moon02Icon,
   Refresh01Icon,
   Sun01Icon,
@@ -32,11 +31,7 @@ function isRouteHandle(handle: unknown): handle is RouteHandle {
   return typeof handle === "object" && handle !== null && "title" in handle
 }
 
-export interface TopBarProps {
-  onMobileMenuClick: () => void
-}
-
-export function TopBar({ onMobileMenuClick }: TopBarProps) {
+export function TopBar() {
   const matches = useMatches()
   const current = matches.at(-1)
   const handle = isRouteHandle(current?.handle) ? current.handle : null
@@ -48,17 +43,7 @@ export function TopBar({ onMobileMenuClick }: TopBarProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/80 backdrop-blur supports-backdrop-filter:bg-background/60">
-      <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-2 px-6 lg:px-10">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="打开菜单"
-          className="lg:hidden"
-          onClick={onMobileMenuClick}
-        >
-          <HugeiconsIcon icon={Menu02Icon} strokeWidth={1.8} />
-        </Button>
-
+      <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 sm:h-16 sm:px-6 lg:px-10">
         <div className="min-w-0 flex-1">
           <div className="truncate font-heading text-base leading-tight font-medium">
             {title}

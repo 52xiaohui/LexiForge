@@ -1,11 +1,12 @@
 import { Suspense, useEffect, useState } from "react"
-import { Outlet } from "react-router-dom"
+import { Outlet, useLocation } from "react-router-dom"
 
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
-import { MobileNav } from "./MobileNav"
+import { MobileBottomNav } from "./MobileBottomNav"
+import { shouldHideMobileTabBar } from "./nav"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
 
@@ -14,15 +15,19 @@ const COLLAPSED_KEY = "lexiforge.sidebarCollapsed"
 function readCollapsed(): boolean {
   if (typeof window === "undefined") return false
   try {
-    return window.localStorage.getItem(COLLAPSED_KEY) === "1"
+    // Prefer icon-rail on first visit so reading keeps more width.
+    const raw = window.localStorage.getItem(COLLAPSED_KEY)
+    if (raw === null) return true
+    return raw === "1"
   } catch {
-    return false
+    return true
   }
 }
 
 export function AppShell() {
-  const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
+  const { pathname } = useLocation()
+  const hideTabs = shouldHideMobileTabBar(pathname)
 
   useEffect(() => {
     try {
@@ -32,10 +37,6 @@ export function AppShell() {
     }
   }, [collapsed])
 
-  // Keyboard shortcut: `[` toggles the sidebar without reaching for the
-  // mouse. We deliberately ignore the event when focus is in an editable
-  // surface (so typing `[` in inputs / textareas stays inert) and skip
-  // modifier combos so OS shortcuts like ⌘[ for browser-back keep working.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -56,8 +57,6 @@ export function AppShell() {
 
   return (
     <div className="min-h-svh bg-background">
-      {/* Keyboard / screen-reader escape to the main content. Visually hidden
-          until it receives focus. */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-full focus:bg-foreground focus:px-3 focus:py-1.5 focus:text-xs focus:font-medium focus:text-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -69,7 +68,7 @@ export function AppShell() {
         <aside
           className={cn(
             "sticky top-0 hidden h-svh shrink-0 border-r border-border/60 transition-[width] duration-200 lg:block",
-            collapsed ? "w-16" : "w-60",
+            collapsed ? "w-16" : "w-60"
           )}
         >
           <Sidebar
@@ -79,20 +78,14 @@ export function AppShell() {
           />
         </aside>
 
-        <MobileNav open={mobileOpen} onOpenChange={setMobileOpen} />
-
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar onMobileMenuClick={() => setMobileOpen(true)} />
-          <main
-            id="main"
-            tabIndex={-1}
-            className="flex-1 outline-none"
-          >
+          <TopBar />
+          <main id="main" tabIndex={-1} className="flex-1 outline-none">
             <div
-              className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12"
-              // Honour the iOS safe-area so fixed bars (VocabWeak floating bar
-              // etc.) have room on notched devices.
-              style={{ paddingBottom: "max(3rem, env(safe-area-inset-bottom))" }}
+              className={cn(
+                "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 lg:px-10 lg:py-12",
+                hideTabs ? "pb-8 lg:pb-12" : "pb-24 lg:pb-12"
+              )}
             >
               <ErrorBoundary>
                 <Suspense fallback={<RouteSkeleton />}>
@@ -103,6 +96,8 @@ export function AppShell() {
           </main>
         </div>
       </div>
+
+      <MobileBottomNav />
     </div>
   )
 }

@@ -21,7 +21,11 @@ export function SelectionBar({
   const overLimit = selectedCount > maxSelection
 
   return (
-    <FloatingActionBar tone={overLimit ? "destructive" : "default"}>
+    <FloatingActionBar
+      tone={overLimit ? "destructive" : "default"}
+      // Sit above the mobile bottom tab bar; desktop has no tab bar.
+      className="bottom-14 lg:bottom-0"
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
         <HugeiconsIcon
           icon={overLimit ? AlertCircleIcon : SparklesIcon}
