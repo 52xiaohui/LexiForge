@@ -5,6 +5,7 @@ import { useDeferredValue, useState } from "react"
 
 import { FilterChip } from "@/components/common/FilterChip"
 import { FilterToolbar } from "@/components/common/FilterToolbar"
+import { ListPagination } from "@/components/common/ListPagination"
 import { ListSkeleton } from "@/components/common/ListSkeleton"
 import { PageHeader } from "@/components/common/PageHeader"
 import { ResponseFilterSelect } from "@/components/common/ResponseFilterSelect"
@@ -13,19 +14,21 @@ import {
   VocabCardList,
   VocabWordTable,
 } from "@/components/vocab/VocabWordViews"
-import { VocabPagination } from "@/components/vocab/VocabPagination"
 import { Input } from "@/components/ui/input"
+import { useListPage } from "@/hooks/use-list-page"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { useVocabSummary } from "@/hooks/use-vocab-summary"
 import type { ResponseFilter } from "@/lib/last-response"
 import type { MasteryTierId } from "@/lib/mastery"
+import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { api } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
 import { withSim } from "@/lib/query-sim"
+import type { Page, VocabWord } from "@/types/api"
 
 type MasteryFilter = "ALL" | MasteryTierId
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = DEFAULT_PAGE_SIZE
 
 const MASTERY_CHIPS: { id: MasteryFilter; label: string }[] = [
   { id: "ALL", label: "全部" },
@@ -38,7 +41,6 @@ export function Vocab() {
   const [search, setSearch] = useState("")
   const [responseFilter, setResponseFilter] = useState<ResponseFilter>("ALL")
   const [masteryFilter, setMasteryFilter] = useState<MasteryFilter>("ALL")
-  const [page, setPage] = useState(1)
   const deferredSearch = useDeferredValue(search)
   const isDesktop = useMediaQuery("(min-width: 768px)")
 
@@ -48,46 +50,50 @@ export function Vocab() {
     refetch: refetchSummary,
   } = useVocabSummary()
 
+  // Page is owned after we know total; seed with 0 total until first fetch.
+  // useListPage clamps when total arrives/changes.
+  const [totalHint, setTotalHint] = useState(0)
+  const { page, pageCount, setPage, reset } = useListPage(totalHint, PAGE_SIZE)
+
   const listParams = {
     page,
     pageSize: PAGE_SIZE,
     search: deferredSearch,
     lastResponse: responseFilter,
     masteryTier: masteryFilter,
-    sort: "-mastery_score" as const,
+    // Lead with words that still need work (low mastery), not the already-owned set.
+    sort: "mastery_score" as const,
   }
 
   const {
     data: pageData,
     isPending,
+    isFetching,
     isError,
     refetch,
   } = useQuery({
     queryKey: queryKeys.vocab.words(listParams),
-    queryFn: withSim(
+    queryFn: withSim<Page<VocabWord>>(
       () => api.listWordsPage(listParams),
       { emptyValue: { items: [], total: 0, page, page_size: PAGE_SIZE } }
     ),
+    placeholderData: (previousData) => previousData,
   })
 
   const pageItems = pageData?.items ?? []
   const total = pageData?.total ?? 0
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  if (totalHint !== total) {
+    setTotalHint(total)
+  }
+
   const tierCounts = summary?.by_mastery_tier ?? {
     mastered: 0,
     learning: 0,
     starting: 0,
   }
   const totalWords = summary?.total ?? total
-  const [trackedPageCount, setTrackedPageCount] = useState(pageCount)
-  if (trackedPageCount !== pageCount) {
-    setTrackedPageCount(pageCount)
-    if (page > pageCount) setPage(pageCount)
-  }
 
-  const resetPage = () => setPage(1)
-
-  if (isPending) {
+  if (isPending && !pageData) {
     return <ListSkeleton header="vocab" />
   }
 
@@ -127,7 +133,7 @@ export function Vocab() {
               active={active}
               onClick={() => {
                 setMasteryFilter(chip.id)
-                resetPage()
+                reset()
               }}
             >
               <span>{chip.label}</span>
@@ -150,7 +156,7 @@ export function Vocab() {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
-              resetPage()
+              reset()
             }}
             className="pl-9"
           />
@@ -159,7 +165,7 @@ export function Vocab() {
           value={responseFilter}
           onValueChange={(v) => {
             setResponseFilter(v)
-            resetPage()
+            reset()
           }}
         />
       </FilterToolbar>
@@ -170,12 +176,13 @@ export function Vocab() {
         <VocabCardList words={pageItems} metric="mastery" />
       )}
 
-      <VocabPagination
+      <ListPagination
         page={page}
         pageCount={pageCount}
         total={total}
         pageSize={PAGE_SIZE}
         onPageChange={setPage}
+        isFetching={isFetching && !isPending}
       />
     </div>
   )

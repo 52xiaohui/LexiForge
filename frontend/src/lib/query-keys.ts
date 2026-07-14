@@ -24,20 +24,18 @@ export const queryKeys = {
       ] as const,
     /** Full in-memory word index (ArticleDetail popovers). Prefer page keys. */
     allWords: () => ["vocab", "words"] as const,
-    weak: (
-      params: Pick<
-        VocabPageParams,
-        "pageSize" | "lastResponse" | "tag" | "sort"
-      > & { infinite?: boolean }
-    ) =>
+    /** Page-based weak list (same shape as words keys for consistent caching). */
+    weak: (params: VocabPageParams) =>
       [
         "vocab",
         "weak",
+        params.page,
         params.pageSize,
+        params.search ?? "",
         params.lastResponse ?? "ALL",
         params.tag ?? "",
+        params.minWeakScore ?? null,
         params.sort ?? "",
-        params.infinite ? "infinite" : "page",
       ] as const,
   },
   articles: {
