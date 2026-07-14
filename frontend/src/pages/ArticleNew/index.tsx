@@ -5,7 +5,7 @@ import {
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { toast } from "sonner"
 
@@ -16,7 +16,10 @@ import {
   lengthMedian,
   MAX_TARGET_WORD_COUNT,
   MIN_TARGET_WORD_COUNT,
+  parseArticleLength,
+  parseCefrLevel,
   recommendArticleLength,
+  RECOMMEND_COUNT,
 } from "@/lib/article-generation"
 import { api } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
@@ -33,12 +36,16 @@ import { PreviewCard } from "./components/PreviewCard"
 import { StatusCard } from "./components/StatusCard"
 
 export function ArticleNew() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const rawIds = (searchParams.get("target_word_ids") ?? "").trim()
   const targetIds = useMemo(
     () => (rawIds ? rawIds.split(",").filter(Boolean) : []),
     [rawIds]
   )
+  const autoRecommendRaw = (searchParams.get("auto_recommend") ?? "").trim()
+  const seedTopic = (searchParams.get("topic") ?? "").trim()
+  const seedDifficulty = parseCefrLevel(searchParams.get("difficulty"))
+  const seedLength = parseArticleLength(searchParams.get("length"))
 
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -47,7 +54,7 @@ export function ArticleNew() {
   const overHardLimit = n > MAX_TARGET_WORD_COUNT
 
   const defaultLength: ArticleLength =
-    n > 0 ? recommendArticleLength(n) : "medium"
+    seedLength ?? (n > 0 ? recommendArticleLength(n) : "medium")
   const defaultCount =
     n > 0
       ? clamp(
@@ -57,8 +64,10 @@ export function ArticleNew() {
         )
       : 30
 
-  const [topic, setTopic] = useState("")
-  const [difficulty, setDifficulty] = useState<CefrLevel>("B1")
+  const [topic, setTopic] = useState(seedTopic)
+  const [difficulty, setDifficulty] = useState<CefrLevel>(
+    seedDifficulty ?? "B1"
+  )
   const [articleLength, setArticleLength] =
     useState<ArticleLength>(defaultLength)
   const [count, setCount] = useState(defaultCount)
@@ -88,6 +97,83 @@ export function ArticleNew() {
     }
   }
 
+  // Deep link: ?auto_recommend=20 → fetch top weak words, then replace URL
+  // with target_word_ids so preview + shareable state stay consistent.
+  const shouldAutoRecommend = Boolean(autoRecommendRaw) && !rawIds
+  const recommendSize = clamp(
+    Number.parseInt(autoRecommendRaw, 10) || RECOMMEND_COUNT,
+    1,
+    MAX_TARGET_WORD_COUNT
+  )
+  const {
+    data: recommendedPage,
+    isFetching: isRecommendFetching,
+    isError: isRecommendError,
+    isSuccess: isRecommendSuccess,
+  } = useQuery({
+    queryKey: ["generate", "auto-recommend", recommendSize] as const,
+    queryFn: () =>
+      api.listWeakWordsPage({
+        page: 1,
+        pageSize: recommendSize,
+        sort: "-weak_score",
+      }),
+    enabled: shouldAutoRecommend,
+    staleTime: 30_000,
+    retry: 1,
+    meta: { silent: true },
+  })
+  // Stay in "picking" until the URL is rewritten (or the request fails).
+  const recommendBusy =
+    shouldAutoRecommend && (isRecommendFetching || !isRecommendError)
+
+  useEffect(() => {
+    if (!shouldAutoRecommend || !isRecommendSuccess || !recommendedPage) return
+
+    if (recommendedPage.items.length === 0) {
+      toast("没有可推荐的薄弱词", {
+        description: "试试先同步墨墨，或到薄弱词页放宽筛选。",
+      })
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.delete("auto_recommend")
+          return next
+        },
+        { replace: true }
+      )
+      return
+    }
+
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete("auto_recommend")
+        next.set(
+          "target_word_ids",
+          recommendedPage.items.map((w) => w.id).join(",")
+        )
+        return next
+      },
+      { replace: true }
+    )
+    toast.success(`已推荐 ${recommendedPage.items.length} 个薄弱词`, {
+      description: "可在右侧预览里确认，再填写主题生成。",
+    })
+  }, [
+    shouldAutoRecommend,
+    isRecommendSuccess,
+    recommendedPage,
+    setSearchParams,
+  ])
+
+  useEffect(() => {
+    if (!shouldAutoRecommend || !isRecommendError) return
+    toast.error("推荐失败", {
+      description: "请稍后再试，或到薄弱词页手动挑选。",
+    })
+  }, [shouldAutoRecommend, isRecommendError])
+
   const {
     data: preview,
     isPending: isPreviewPending,
@@ -100,6 +186,7 @@ export function ArticleNew() {
     retry: 1,
     // Preview is advisory; don't block the page on a slow backend.
     staleTime: 15_000,
+    enabled: !shouldAutoRecommend,
   })
 
   const generate = useMutation({
@@ -125,9 +212,12 @@ export function ArticleNew() {
     countInRange &&
     !overHardLimit &&
     !selectionExceedsCount &&
-    !generate.isPending
+    !generate.isPending &&
+    !recommendBusy
 
   const firstError = (() => {
+    if (recommendBusy || autoRecommendRaw)
+      return null
     if (topic.trim().length === 0) return "请先输入文章主题"
     if (overHardLimit)
       return `已勾选 ${n} 个词，超过单篇上限 ${MAX_TARGET_WORD_COUNT}，请拆分成多篇`
@@ -150,8 +240,17 @@ export function ArticleNew() {
     generate.mutate(input)
   }
 
+  const statusHint =
+    recommendBusy || autoRecommendRaw
+      ? "正在挑选薄弱词…"
+      : firstError
+        ? firstError
+        : generate.isPending
+          ? "正在生成…"
+          : "准备就绪"
+
   return (
-    <div className="pb-28 lg:pb-0">
+    <div className="pb-36 lg:pb-0">
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3">
           <ArticleParamsForm
@@ -179,8 +278,13 @@ export function ArticleNew() {
             totalPicked={n}
             targetCount={count}
             recommendedLength={n > 0 ? recommendArticleLength(n) : null}
-            isLoading={isPreviewPending || isPreviewFetching}
-            isError={isPreviewError}
+            isLoading={
+              recommendBusy ||
+              Boolean(autoRecommendRaw) ||
+              isPreviewPending ||
+              isPreviewFetching
+            }
+            isError={isPreviewError && !recommendBusy}
             onRetry={() => void refetchPreview()}
           />
 
@@ -200,13 +304,14 @@ export function ArticleNew() {
       <FloatingActionBar
         visibility="mobile"
         tone={firstError ? "destructive" : "default"}
-        className="px-4"
+        // Sit above the mobile bottom tab bar (same offset as VocabWeak).
+        className="bottom-14 px-4 lg:bottom-0"
         contentClassName="mx-auto"
       >
         <div className="flex min-w-0 flex-1 items-center gap-2 text-sm">
           <HugeiconsIcon
             icon={
-              generate.isPending
+              generate.isPending || recommendBusy
                 ? Loading02Icon
                 : firstError
                   ? AlertCircleIcon
@@ -215,12 +320,12 @@ export function ArticleNew() {
             size={18}
             strokeWidth={1.8}
             className={cn(
-              generate.isPending && "animate-spin",
+              (generate.isPending || recommendBusy) && "animate-spin",
               firstError && "text-destructive"
             )}
           />
           <span className={cn("truncate", firstError && "text-destructive")}>
-            {firstError ?? (generate.isPending ? "正在生成…" : "准备就绪")}
+            {statusHint}
           </span>
         </div>
         {generate.isError && (
@@ -229,7 +334,7 @@ export function ArticleNew() {
           </Button>
         )}
         <GenerateButton
-          isPending={generate.isPending}
+          isPending={generate.isPending || recommendBusy}
           isError={generate.isError}
           canSubmit={canSubmit}
           onSubmit={handleSubmit}

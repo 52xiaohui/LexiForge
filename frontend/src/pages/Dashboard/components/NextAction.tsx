@@ -10,6 +10,10 @@ import { Link } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
 import {
+  buildGeneratePath,
+  RECOMMEND_COUNT,
+} from "@/lib/article-generation"
+import {
   formatArticleLength,
   formatCoverage,
   formatRelativeTime,
@@ -117,7 +121,7 @@ function continuePlan(unread: Article): Plan {
 }
 
 function weakPlan(weakCount: number): Plan {
-  const largeBacklog = weakCount >= 20
+  const largeBacklog = weakCount >= RECOMMEND_COUNT
   return {
     id: "weak",
     tone: "generate",
@@ -127,10 +131,14 @@ function weakPlan(weakCount: number): Plan {
       ? `有 ${weakCount} 个薄弱词等着被练上`
       : `还有 ${weakCount} 个薄弱词可以重点练`,
     description: largeBacklog
-      ? "生成一篇覆盖约 30 个薄弱词的短文，用阅读把它们复习过去。"
+      ? `自动挑选约 ${RECOMMEND_COUNT} 个最薄弱的词生成短文，用阅读把它们串起来复习。`
       : "先挑几个最想巩固的词，再生成一篇短文，阅读压力会更轻。",
-    primaryLabel: largeBacklog ? "生成一篇" : "挑选薄弱词",
-    primaryTo: largeBacklog ? "/articles/new" : "/vocab/weak",
+    primaryLabel: largeBacklog
+      ? `推荐 ${RECOMMEND_COUNT} 词生成`
+      : "挑选薄弱词",
+    primaryTo: largeBacklog
+      ? buildGeneratePath({ autoRecommend: RECOMMEND_COUNT })
+      : "/vocab/weak",
     secondaryLabel: largeBacklog ? "去薄弱词挑选" : "直接生成",
     secondaryTo: largeBacklog ? "/vocab/weak" : "/articles/new",
   }

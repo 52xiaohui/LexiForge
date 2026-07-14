@@ -14,6 +14,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useReadingPrefs } from "@/hooks/use-reading-prefs"
+import {
+  buildGeneratePath,
+  RECOMMEND_COUNT,
+} from "@/lib/article-generation"
 import { toastError } from "@/lib/errors"
 import {
   formatArticleLength,
@@ -401,6 +405,12 @@ export function ArticleDetail() {
   }
 
   const covered = article.article_words.filter((w) => w.is_covered)
+  const nextGenerateTo = buildGeneratePath({
+    autoRecommend: RECOMMEND_COUNT,
+    topic: article.topic,
+    difficulty: article.difficulty,
+    length: article.article_length,
+  })
 
   const masterAll = async () => {
     const toMaster = covered.filter((w) => !wordIndex.get(w.word_id)?.mastered)
@@ -593,6 +603,7 @@ export function ArticleDetail() {
             isRegenerating={regenerate.isPending}
             onExport={handleExport}
             onPracticeWords={() => setReviewOpen(true)}
+            nextGenerateTo={nextGenerateTo}
           />
         </div>
       </div>

@@ -27,7 +27,11 @@ import { useSelectionSet } from "@/hooks/use-selection-set"
 import { useSortState } from "@/hooks/use-sort-state"
 import type { VocabSort } from "@/lib/api"
 import type { ResponseFilter } from "@/lib/last-response"
-import { MAX_TARGET_WORD_COUNT } from "@/lib/article-generation"
+import {
+  buildGeneratePath,
+  MAX_TARGET_WORD_COUNT,
+  RECOMMEND_COUNT,
+} from "@/lib/article-generation"
 import { DEFAULT_PAGE_SIZE } from "@/lib/pagination"
 import { api } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
@@ -47,8 +51,6 @@ type SortBy = "weak_score" | "study_count"
 
 const MAX_SELECTION = MAX_TARGET_WORD_COUNT
 const PAGE_SIZE = DEFAULT_PAGE_SIZE
-/** One-click “this round” package size for generation. */
-const RECOMMEND_COUNT = 20
 
 function sortParam(
   sortBy: SortBy,
@@ -140,8 +142,11 @@ export function VocabWeak() {
       selection.selectedCount > MAX_SELECTION
     )
       return
-    const ids = Array.from(selection.selected).join(",")
-    navigate(`/articles/new?target_word_ids=${ids}`)
+    navigate(
+      buildGeneratePath({
+        targetWordIds: Array.from(selection.selected),
+      })
+    )
   }
 
   const [recommendBusy, setRecommendBusy] = useState(false)
@@ -162,8 +167,11 @@ export function VocabWeak() {
         })
         return
       }
-      const ids = page.items.map((w) => w.id).join(",")
-      navigate(`/articles/new?target_word_ids=${ids}`)
+      navigate(
+        buildGeneratePath({
+          targetWordIds: page.items.map((w) => w.id),
+        })
+      )
     } catch (error) {
       toast.error("推荐失败", {
         description:

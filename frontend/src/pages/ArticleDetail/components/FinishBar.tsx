@@ -37,6 +37,11 @@ export interface FinishBarProps {
   isRegenerating: boolean
   onExport: () => void
   onPracticeWords: () => void
+  /**
+   * Deep link for the primary “next article” CTA. Prefer carrying topic /
+   * difficulty / auto-recommend so the learning loop stays warm.
+   */
+  nextGenerateTo?: string
 }
 
 /**
@@ -52,6 +57,7 @@ export function FinishBar({
   isRegenerating,
   onExport,
   onPracticeWords,
+  nextGenerateTo = "/articles/new",
 }: FinishBarProps) {
   return (
     <section className="rounded-[1.5rem] border border-border/50 bg-background/55 p-4 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/45 sm:p-5">
@@ -66,7 +72,7 @@ export function FinishBar({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="default" size="sm">
-            <Link to="/articles/new">
+            <Link to={nextGenerateTo}>
               <HugeiconsIcon
                 icon={SparklesIcon}
                 data-icon="inline-start"
