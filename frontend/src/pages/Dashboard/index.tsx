@@ -1,10 +1,5 @@
-import type { ReactNode } from "react"
-
 import {
   AlertCircleIcon,
-  ArrowRight01Icon,
-  Book02Icon,
-  Calendar03Icon,
   CloudDownloadIcon,
   DashboardCircleIcon,
   SparklesIcon,
@@ -13,32 +8,24 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 
-import { StatCard } from "@/components/common/StatCard"
 import { Button } from "@/components/ui/button"
 import { useMaimemoSync } from "@/hooks/use-maimemo-sync"
 import { useVocabSummary } from "@/hooks/use-vocab-summary"
-import {
-  formatAbsoluteTime,
-  formatCount,
-  formatRelativeTime,
-} from "@/lib/formatters"
 import { api } from "@/lib/api"
 import { queryKeys } from "@/lib/query-keys"
-import { cn } from "@/lib/utils"
 
+import { HealthStrip } from "./components/HealthStrip"
 import { NextAction } from "./components/NextAction"
 import { NextReview } from "./components/NextReview"
 import { RecentArticles } from "./components/RecentArticles"
 
-const weekdayFormatter = new Intl.DateTimeFormat("zh-CN", { weekday: "long" })
-
 export function Dashboard() {
   const { data: summary, isPending: isSummaryPending } = useVocabSummary()
-  const { data: articles } = useQuery({
+  const { data: articles, isPending: isArticlesPending } = useQuery({
     queryKey: queryKeys.articles.recent(),
     queryFn: () => api.listRecentArticles(),
   })
-  const { data: nextReview } = useQuery({
+  const { data: nextReview, isPending: isReviewPending } = useQuery({
     queryKey: queryKeys.vocab.nextReview(),
     queryFn: () => api.nextReview(),
   })
@@ -51,24 +38,35 @@ export function Dashboard() {
 
   const total = summary?.total ?? 0
   const weak = summary?.weak ?? 0
-  const weakPct = total > 0 ? Math.round((weak / total) * 100) : 0
   const lastSync = summary?.last_synced_at ?? null
+  const stickingCount = summary?.sticking_count ?? 0
 
   // First-run state: no vocab yet means the backend hasn't seen a sync.
   const isFirstRun = summary != null && total === 0 && weak === 0
 
   return (
-    <div className="space-y-8 sm:space-y-10">
+    <div className="space-y-6 sm:space-y-8">
       {isFirstRun ? (
-        <FirstRunCard />
+        <FirstRunCard
+          isSyncing={isSyncing}
+          syncCooldownRemaining={cooldownRemaining}
+          onSync={sync}
+        />
       ) : (
         <>
-          <section className="space-y-4">
-            <div className="flex items-end justify-between">
-              <p className="text-sm tracking-wide text-muted-foreground">
-                {weekdayFormatter.format(new Date())} · 下一步
-              </p>
-            </div>
+          <HealthStrip
+            total={total}
+            weak={weak}
+            stickingCount={stickingCount}
+            lastSync={lastSync}
+            isLoading={isSummaryPending && summary === undefined}
+            isSyncing={isSyncing}
+            syncCooldownRemaining={cooldownRemaining}
+            onSync={sync}
+          />
+
+          <section className="space-y-3">
+            <p className="text-sm text-muted-foreground">下一步</p>
             <NextAction
               summary={summary}
               unreadArticle={unreadArticle ?? null}
@@ -79,42 +77,18 @@ export function Dashboard() {
             />
           </section>
 
-          <MobileStatStrip
-            total={formatCount(total)}
-            weak={formatCount(weak)}
-            weakPct={weakPct}
-            lastSync={lastSync}
-          />
-
-          <section className="hidden gap-4 sm:grid sm:grid-cols-3">
-            <StatCard
-              label="总单词数"
-              value={formatCount(total)}
-              hint="同步自墨墨学习记录"
-              icon={Book02Icon}
-              tone="accent"
-            />
-            <StatCard
-              label="薄弱词数量"
-              value={formatCount(weak)}
-              hint={`占总词量 ${weakPct}%`}
-              icon={AlertCircleIcon}
-              tone="warning"
-            />
-            <StatCard
-              label="最近同步"
-              value={formatRelativeTime(lastSync)}
-              hint={lastSync ? formatAbsoluteTime(lastSync) : "尚未同步"}
-              icon={Calendar03Icon}
-            />
-          </section>
-
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-5">
             <div className="lg:col-span-3">
-              <RecentArticles articles={articles ?? []} />
+              <RecentArticles
+                articles={articles ?? []}
+                isLoading={isArticlesPending && articles === undefined}
+              />
             </div>
             <div className="lg:col-span-2">
-              <NextReview words={nextReview ?? []} />
+              <NextReview
+                words={nextReview ?? []}
+                isLoading={isReviewPending && nextReview === undefined}
+              />
             </div>
           </section>
         </>
@@ -123,7 +97,17 @@ export function Dashboard() {
   )
 }
 
-function FirstRunCard() {
+function FirstRunCard({
+  isSyncing,
+  syncCooldownRemaining,
+  onSync,
+}: {
+  isSyncing: boolean
+  syncCooldownRemaining: number
+  onSync: () => void
+}) {
+  const syncDisabled = isSyncing || syncCooldownRemaining > 0
+
   return (
     <section className="space-y-6">
       <div className="rounded-3xl bg-card p-8 text-center ring-1 ring-foreground/5 sm:p-12">
@@ -146,7 +130,7 @@ function FirstRunCard() {
           <StepCard
             step="1"
             title="同步墨墨"
-            desc="MVP 阶段通过环境变量 MAIMEMO_TOKEN 触发后端同步。"
+            desc="后端通过 MAIMEMO_TOKEN 拉取学习记录。先同步，后面的推荐才有依据。"
             icon={CloudDownloadIcon}
           />
           <StepCard
@@ -158,25 +142,37 @@ function FirstRunCard() {
           <StepCard
             step="3"
             title="生成文章"
-            desc="选主题、难度、长度，AI 帮你写一段覆盖目标词的短文。"
+            desc="选主题、难度、长度，AI 写一段覆盖目标词的短文。"
             icon={SparklesIcon}
           />
         </div>
         <div className="mt-8 flex flex-wrap justify-center gap-2">
-          <Button asChild>
-            <Link to="/vocab/weak">
-              去看薄弱词
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                data-icon="inline-end"
-                strokeWidth={1.8}
-              />
-            </Link>
+          <Button
+            size="default"
+            disabled={syncDisabled}
+            onClick={onSync}
+          >
+            <HugeiconsIcon
+              icon={CloudDownloadIcon}
+              data-icon="inline-start"
+              strokeWidth={1.8}
+              className={isSyncing ? "animate-spin" : undefined}
+            />
+            {isSyncing
+              ? "同步中…"
+              : syncCooldownRemaining > 0
+                ? `${syncCooldownRemaining}s 后可同步`
+                : "同步墨墨数据"}
           </Button>
           <Button asChild variant="outline">
             <Link to="/articles/new">直接生成一篇</Link>
           </Button>
         </div>
+        <p className="mx-auto mt-4 max-w-sm text-xs text-muted-foreground">
+          需在后端环境变量中配置{" "}
+          <code className="rounded bg-muted px-1 py-0.5">MAIMEMO_TOKEN</code>
+          。同步完成后，总览会显示真实词库数据。
+        </p>
       </div>
     </section>
   )
@@ -202,72 +198,6 @@ function StepCard({ step, title, desc, icon }: StepCardProps) {
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
         {desc}
       </p>
-    </div>
-  )
-}
-
-interface MobileStatStripProps {
-  total: string
-  weak: string
-  weakPct: number
-  lastSync: string | null
-}
-
-function MobileStatStrip({
-  total,
-  weak,
-  weakPct,
-  lastSync,
-}: MobileStatStripProps) {
-  return (
-    <section className="sm:hidden">
-      <div className="grid grid-cols-2 overflow-hidden rounded-2xl ring-1 ring-foreground/10">
-        <StatCell
-          className="border-r border-b border-border/60"
-          label="总词数"
-          value={total}
-          hint="同步自墨墨"
-        />
-        <StatCell
-          className="border-b border-border/60"
-          label="薄弱词"
-          value={weak}
-          hint={`占 ${weakPct}%`}
-        />
-        <StatCell
-          className="col-span-2"
-          label="最近同步"
-          value={
-            <span className="text-xl">{formatRelativeTime(lastSync)}</span>
-          }
-          hint={lastSync ? "已是最新数据来源" : "尚未同步"}
-        />
-      </div>
-    </section>
-  )
-}
-
-interface StatCellProps {
-  label: string
-  value: ReactNode
-  hint?: string
-  className?: string
-}
-
-function StatCell({ label, value, hint, className }: StatCellProps) {
-  return (
-    <div className={cn("bg-card p-3.5", className)}>
-      <div className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground uppercase">
-        {label}
-      </div>
-      <div className="mt-1 font-heading text-2xl font-semibold tracking-tight tabular-nums">
-        {value}
-      </div>
-      {hint && (
-        <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-          {hint}
-        </div>
-      )}
     </div>
   )
 }
