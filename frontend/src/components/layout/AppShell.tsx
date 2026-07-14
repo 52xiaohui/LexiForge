@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState } from "react"
-import { Outlet, useLocation } from "react-router-dom"
+import { Outlet, useLocation, useMatches } from "react-router-dom"
 
+import type { RouteHandle } from "@/app/router"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -9,6 +10,10 @@ import { MobileBottomNav } from "./MobileBottomNav"
 import { shouldHideMobileTabBar } from "./nav"
 import { Sidebar } from "./Sidebar"
 import { TopBar } from "./TopBar"
+
+function isRouteHandle(handle: unknown): handle is RouteHandle {
+  return typeof handle === "object" && handle !== null && "title" in handle
+}
 
 const COLLAPSED_KEY = "lexiforge.sidebarCollapsed"
 
@@ -27,6 +32,7 @@ function readCollapsed(): boolean {
 export function AppShell() {
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsed)
   const { pathname } = useLocation()
+  const matches = useMatches()
   const hideTabs = shouldHideMobileTabBar(pathname)
 
   useEffect(() => {
@@ -36,6 +42,14 @@ export function AppShell() {
       // non-fatal
     }
   }, [collapsed])
+
+  useEffect(() => {
+    const current = matches.at(-1)
+    const handle = isRouteHandle(current?.handle) ? current.handle : null
+    document.title = handle?.title
+      ? `${handle.title} · LexiForge`
+      : "LexiForge"
+  }, [matches, pathname])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
