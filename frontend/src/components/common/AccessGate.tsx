@@ -2,6 +2,8 @@ import {
   Key01Icon,
   Loading02Icon,
   SquareLock01Icon,
+  ViewIcon,
+  ViewOffSlashIcon,
 } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import {
@@ -29,6 +31,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   const [token, setToken] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showToken, setShowToken] = useState(false)
 
   const checkSession = useCallback(async () => {
     setStatus("checking")
@@ -39,7 +42,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
     } catch (cause) {
       setStatus("locked")
       if (!isAccessDeniedError(cause)) {
-        setError("无法连接到 LexiForge API，请检查后端状态后重试。")
+        setError("无法连接到 LexiForge API，请检查后端状态与网络后重试。")
       }
     }
   }, [])
@@ -71,12 +74,13 @@ export function AccessGate({ children }: { children: ReactNode }) {
     try {
       await api.unlock(candidate)
       setToken("")
+      setShowToken(false)
       setStatus("unlocked")
     } catch (cause) {
       setError(
         isAccessDeniedError(cause)
-          ? "访问令牌不正确。"
-          : "暂时无法验证令牌，请检查后端连接。"
+          ? "访问令牌不正确。请核对服务器环境变量 APP_ACCESS_TOKEN。"
+          : "暂时无法验证令牌，请检查后端连接后重试。"
       )
     } finally {
       setIsSubmitting(false)
@@ -109,21 +113,57 @@ export function AccessGate({ children }: { children: ReactNode }) {
           LexiForge
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          输入后端配置的单用户访问令牌，解锁当前浏览器会话。
+          单用户访问保护。令牌只保存在本浏览器的会话里，关闭标签页后需重新输入。
         </p>
 
         <div className="mt-8 space-y-2 border-t border-border pt-6">
           <Label htmlFor="access-token">访问令牌</Label>
-          <Input
-            id="access-token"
-            type="password"
-            autoComplete="current-password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            aria-invalid={Boolean(error)}
-            autoFocus
-          />
+          <div className="relative">
+            <Input
+              id="access-token"
+              type={showToken ? "text" : "password"}
+              autoComplete="current-password"
+              spellCheck={false}
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              onPaste={(event) => {
+                const text = event.clipboardData.getData("text")
+                if (text.trim()) {
+                  event.preventDefault()
+                  setToken(text.trim())
+                }
+              }}
+              aria-invalid={Boolean(error)}
+              placeholder="粘贴 APP_ACCESS_TOKEN"
+              className="pr-10 font-mono text-sm"
+              autoFocus
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-1/2 right-1.5 -translate-y-1/2 text-muted-foreground"
+              aria-label={showToken ? "隐藏令牌" : "显示令牌"}
+              onClick={() => setShowToken((v) => !v)}
+            >
+              <HugeiconsIcon
+                icon={showToken ? ViewOffSlashIcon : ViewIcon}
+                strokeWidth={1.8}
+              />
+            </Button>
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            令牌来自后端环境变量{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
+              APP_ACCESS_TOKEN
+            </code>
+            （部署机上的{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
+              1panel.env
+            </code>{" "}
+            或等价配置），不是墨墨 / OpenAI 的 key。
+          </p>
         </div>
 
         <div className="mt-5 flex gap-2">

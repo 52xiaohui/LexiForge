@@ -88,9 +88,18 @@ export function ArticleNew() {
     }
   }
 
-  const { data: preview } = useQuery({
+  const {
+    data: preview,
+    isPending: isPreviewPending,
+    isFetching: isPreviewFetching,
+    isError: isPreviewError,
+    refetch: refetchPreview,
+  } = useQuery({
     queryKey: queryKeys.generate.preview(rawIds, count),
     queryFn: () => api.generationPreview(targetIds, count),
+    retry: 1,
+    // Preview is advisory; don't block the page on a slow backend.
+    staleTime: 15_000,
   })
 
   const generate = useMutation({
@@ -170,6 +179,9 @@ export function ArticleNew() {
             totalPicked={n}
             targetCount={count}
             recommendedLength={n > 0 ? recommendArticleLength(n) : null}
+            isLoading={isPreviewPending || isPreviewFetching}
+            isError={isPreviewError}
+            onRetry={() => void refetchPreview()}
           />
 
           <StatusCard

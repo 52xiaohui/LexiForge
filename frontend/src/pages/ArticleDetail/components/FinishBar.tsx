@@ -41,13 +41,9 @@ export interface FinishBarProps {
 
 /**
  * Hierarchy:
- * 1. Primary CTA — `再来一篇` (the most repeatable next step in the loop).
- * 2. Secondary — `练这篇的词` (opens the review sheet's flashcard tab).
- * 3. Overflow menu — `导出 / 批量掌握` for power users.
- *
- * Why so opinionated? The legacy bar weighted four actions equally, but our
- * usage pattern is "read article → read another article". `导出` is rare and
- * `批量掌握` is too heavy a commitment to be top-level.
+ * 1. Primary — generate a *new* article (keeps the learning loop moving).
+ * 2. Secondary — regenerate with same params / practice targets.
+ * 3. Overflow — export / batch master.
  */
 export function FinishBar({
   coveredCount,
@@ -57,36 +53,44 @@ export function FinishBar({
   onExport,
   onPracticeWords,
 }: FinishBarProps) {
-  // The legacy bar weighted four actions equally, but our usage pattern is
-  // "read article → read another article". `导出` is rare and `批量掌握` is
-  // too heavy a commitment to be top-level.
   return (
     <section className="rounded-[1.5rem] border border-border/50 bg-background/55 p-4 shadow-sm backdrop-blur supports-backdrop-filter:bg-background/45 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="font-heading text-sm font-medium">读完了？</div>
+          <div className="font-heading text-sm font-medium">读完了？继续下一轮</div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {coveredCount > 0
-              ? `命中 ${coveredCount} 个目标词。换一篇保持节奏，或先练这篇的词。`
-              : "换一篇继续练。"}
+              ? `命中 ${coveredCount} 个目标词。生成下一篇把薄弱词继续串起来，或先练这篇的词。`
+              : "生成下一篇继续练，或换参数重新生成。"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="default" size="sm">
+            <Link to="/articles/new">
+              <HugeiconsIcon
+                icon={SparklesIcon}
+                data-icon="inline-start"
+                strokeWidth={1.8}
+              />
+              生成下一篇
+            </Link>
+          </Button>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                variant="default"
+                variant="outline"
                 size="sm"
                 disabled={isRegenerating}
                 className={cn(isRegenerating && "opacity-80")}
               >
                 <HugeiconsIcon
-                  icon={isRegenerating ? RefreshIcon : SparklesIcon}
+                  icon={isRegenerating ? RefreshIcon : RefreshIcon}
                   data-icon="inline-start"
                   strokeWidth={1.8}
                   className={cn(isRegenerating && "animate-spin")}
                 />
-                {isRegenerating ? "重新生成中…" : "再来一篇"}
+                {isRegenerating ? "重新生成中…" : "同参数再来"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>

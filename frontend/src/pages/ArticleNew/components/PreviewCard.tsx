@@ -1,4 +1,8 @@
-import { Target02Icon } from "@hugeicons/core-free-icons"
+import {
+  Loading02Icon,
+  RefreshIcon,
+  Target02Icon,
+} from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { Link } from "react-router-dom"
 
@@ -6,6 +10,8 @@ import { LastResponseBadge } from "@/components/common/LastResponseBadge"
 import { SectionPanel } from "@/components/common/SectionPanel"
 import { StickingBadge } from "@/components/common/StickingBadge"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { formatArticleLength } from "@/lib/formatters"
 import { LAST_RESPONSE_ORDER } from "@/lib/last-response"
 import { hasStickingTag } from "@/lib/vocab-tags"
@@ -50,6 +56,9 @@ export interface PreviewCardProps {
   totalPicked: number
   targetCount: number
   recommendedLength: ArticleLength | null
+  isLoading?: boolean
+  isError?: boolean
+  onRetry?: () => void
 }
 
 export function PreviewCard({
@@ -61,129 +70,164 @@ export function PreviewCard({
   totalPicked,
   targetCount,
   recommendedLength,
+  isLoading,
+  isError,
+  onRetry,
 }: PreviewCardProps) {
   const planSize = words.length
   return (
     <SectionPanel
       title={
         <>
-          <HugeiconsIcon icon={Target02Icon} size={16} strokeWidth={1.8} />
+          <HugeiconsIcon
+            icon={isLoading ? Loading02Icon : Target02Icon}
+            size={16}
+            strokeWidth={1.8}
+            className={cn(isLoading && "animate-spin")}
+          />
           覆盖预览
         </>
       }
     >
-      <div className="space-y-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <div className="text-xs tracking-wider text-muted-foreground uppercase">
-            计划覆盖
-          </div>
-          <div>
-            <span className="font-heading text-2xl font-semibold tabular-nums">
-              {planSize}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {" "}
-              / {targetCount}
-            </span>
-          </div>
-        </div>
-
-        {countsByResponse && planSize > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {LAST_RESPONSE_ORDER.map((resp) => {
-              const c = countsByResponse[resp] ?? 0
-              if (c === 0) return null
-              return (
-                <div
-                  key={resp}
-                  className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]"
-                >
-                  <LastResponseBadge
-                    value={resp}
-                    className="border-0 bg-transparent px-0"
-                  />
-                  <span className="tabular-nums">{c}</span>
-                </div>
-              )
-            })}
-            {stickingCount > 0 && (
-              <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]">
-                <StickingBadge className="border-0 bg-transparent px-0" />
-                <span className="tabular-nums">{stickingCount}</span>
-              </div>
-            )}
-          </div>
-        )}
-
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {isAuto ? (
-            <>
-              当前是自动选词模式，后端会按{" "}
-              <span className="text-foreground">
-                推荐优先 / 巩固 / 最近学习
-              </span>
-              三层候选池挑选，并用阅读反馈动态调整顺序。
-            </>
-          ) : (
-            <>
-              来自薄弱词页勾选共 {totalPicked} 个。
-              {autoFillCount > 0 && (
-                <> 还差 {autoFillCount} 个名额，后端会按比例自动补足。</>
-              )}
-            </>
+      {isError ? (
+        <div className="space-y-3 text-sm">
+          <p className="text-destructive">预览加载失败，可能是网络或后端繁忙。</p>
+          {onRetry && (
+            <Button size="sm" variant="outline" onClick={onRetry}>
+              <HugeiconsIcon
+                icon={RefreshIcon}
+                data-icon="inline-start"
+                strokeWidth={1.8}
+              />
+              重试预览
+            </Button>
           )}
-        </p>
-
-        {planSize > 0 && (
+        </div>
+      ) : isLoading && planSize === 0 ? (
+        <div className="space-y-3">
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-4 w-full" />
           <div className="flex flex-wrap gap-1.5">
-            {words.slice(0, 24).map((w) => (
-              <Badge
-                key={w.id}
-                variant="outline"
-                title={recommendationHint(w)}
-                className={cn(
-                  "text-[11px]",
-                  hasStickingTag(w.tags) &&
-                    "border-amber-500/40 text-amber-700 dark:text-amber-400"
-                )}
-              >
-                {w.spelling}
-                {w.recommendation_score != null && (
-                  <span className="ml-1 text-[9px] text-muted-foreground tabular-nums">
-                    {w.recommendation_score}
-                  </span>
-                )}
-              </Badge>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-6 w-14 rounded-full" />
             ))}
-            {planSize > 24 && (
-              <Badge
-                variant="outline"
-                className="text-[11px] text-muted-foreground"
-              >
-                +{planSize - 24}
-              </Badge>
-            )}
           </div>
-        )}
+          <p className="text-xs text-muted-foreground">正在计算推荐词…</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-xs tracking-wider text-muted-foreground uppercase">
+              计划覆盖
+            </div>
+            <div>
+              <span className="font-heading text-2xl font-semibold tabular-nums">
+                {planSize}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {" "}
+                / {targetCount}
+              </span>
+            </div>
+          </div>
 
-        {recommendedLength && (
-          <p className="border-t border-border/60 pt-3 text-xs text-muted-foreground">
-            推荐长度：
-            <span className="text-foreground">
-              {" "}
-              {formatArticleLength(recommendedLength)}
-            </span>
-            · 不够时可以回{" "}
-            <Link
-              to="/vocab/weak"
-              className="underline underline-offset-4 hover:text-foreground"
-            >
-              薄弱词页
-            </Link>{" "}
-            增减。
+          {countsByResponse && planSize > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {LAST_RESPONSE_ORDER.map((resp) => {
+                const c = countsByResponse[resp] ?? 0
+                if (c === 0) return null
+                return (
+                  <div
+                    key={resp}
+                    className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]"
+                  >
+                    <LastResponseBadge
+                      value={resp}
+                      className="border-0 bg-transparent px-0"
+                    />
+                    <span className="tabular-nums">{c}</span>
+                  </div>
+                )
+              })}
+              {stickingCount > 0 && (
+                <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px]">
+                  <StickingBadge className="border-0 bg-transparent px-0" />
+                  <span className="tabular-nums">{stickingCount}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {isAuto ? (
+              <>
+                当前是自动选词模式，后端会按{" "}
+                <span className="text-foreground">
+                  推荐优先 / 巩固 / 最近学习
+                </span>
+                三层候选池挑选，并用阅读反馈动态调整顺序。
+              </>
+            ) : (
+              <>
+                来自薄弱词页勾选共 {totalPicked} 个。
+                {autoFillCount > 0 && (
+                  <> 还差 {autoFillCount} 个名额，后端会按比例自动补足。</>
+                )}
+              </>
+            )}
           </p>
-        )}
-      </div>
+
+          {planSize > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {words.slice(0, 24).map((w) => (
+                <Badge
+                  key={w.id}
+                  variant="outline"
+                  title={recommendationHint(w)}
+                  className={cn(
+                    "text-[11px]",
+                    hasStickingTag(w.tags) &&
+                      "border-amber-500/40 text-amber-700 dark:text-amber-400"
+                  )}
+                >
+                  {w.spelling}
+                  {w.recommendation_score != null && (
+                    <span className="ml-1 text-[9px] text-muted-foreground tabular-nums">
+                      {w.recommendation_score}
+                    </span>
+                  )}
+                </Badge>
+              ))}
+              {planSize > 24 && (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] text-muted-foreground"
+                >
+                  +{planSize - 24}
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {recommendedLength && (
+            <p className="border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              推荐长度：
+              <span className="text-foreground">
+                {" "}
+                {formatArticleLength(recommendedLength)}
+              </span>
+              · 不够时可以回{" "}
+              <Link
+                to="/vocab/weak"
+                className="underline underline-offset-4 hover:text-foreground"
+              >
+                薄弱词页
+              </Link>{" "}
+              增减。
+            </p>
+          )}
+        </div>
+      )}
     </SectionPanel>
   )
 }
